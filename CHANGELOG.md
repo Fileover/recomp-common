@@ -5,6 +5,11 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- **An Online page for a launcher of one game** (`Description::online_page`): hosting, joining, the lobby and the
+  waiting room on a page of their own after Game, as a collection's Online page has them, rather than a card on the
+  Game page. **The port's own pages after Game** (`Description::own_pages_after_game`): Game, Online, then the
+  port's pages, then Features and Controllers. `App::single_layout()` gives a one-game launcher's pages in order.
+- **The update card at the top of the Game page**, new version or not, as a collection's Games page has it.
 - **A waiting room for a launcher of one game** (`Online::room`, `room_protocol`): what a collection's Online page has,
   on the Game page under the Online card: the invitations waiting for this player, and the players in the room to
   invite to the game. The launcher checks in while the Game page is open. `App::room_url()` and `room_protocol()` are

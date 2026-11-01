@@ -24,6 +24,7 @@
 #endif
 
 #include "folders.h"
+#include "gamepads.h"
 #include "layout.h"
 #include "online.h"
 #include "steam.h"
@@ -410,6 +411,8 @@ App::App(SDL_Window* window)
       program_folder_(base_path()),
       about_(the_description()) {
     prefs_.load();
+    // (controllers SDL doesn't know: gamecontrollerdb.txt beside the launcher or in its folder, as the game reads it)
+    recomp::AddGamepadMappings({program_folder_, folder_});
     for (const Target& target : targets()) {
         auto slot = std::make_unique<Slot>(target.folder / "settings.ini");
         slot->about = target.about;

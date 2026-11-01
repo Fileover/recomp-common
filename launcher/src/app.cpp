@@ -109,7 +109,8 @@ std::filesystem::path program_path(const std::string& exe) {
 }
 
 // The system's folder for a game's (or a collection's) things, named by it (SDL_GetPrefPath makes it)
-std::filesystem::path system_folder(const char* name) {
+std::filesystem::path system_folder(const char* game_name) {
+    const std::string name = recomp::FolderName(game_name);  // (what Windows takes as a folder's name)
 #ifdef __ANDROID__
     // (SDL_GetPrefPath is one folder for the whole app there: the app's own folder on the shared storage, which a
     // computer sees over USB in Android/data, with a folder for each name in it)
@@ -124,7 +125,7 @@ std::filesystem::path system_folder(const char* name) {
         return folder;
     }
 #endif
-    char* path = SDL_GetPrefPath("", name);
+    char* path = SDL_GetPrefPath("", name.c_str());
     std::filesystem::path folder = path ? std::filesystem::path(path) : base_path() / recomp::kPortableFolder / std::filesystem::u8path(name);
     SDL_free(path);
     return folder;
@@ -137,7 +138,7 @@ std::filesystem::path player_folder(const char* name, const char* home_env) {
         return home;
     }
     if (std::filesystem::path portable = recomp::PortableFolder(base_path()); !portable.empty()) {
-        return portable / std::filesystem::u8path(name);
+        return portable / std::filesystem::u8path(recomp::FolderName(name));
     }
     return system_folder(name);  // where the game keeps settings.ini too
 }
@@ -299,7 +300,7 @@ bool prepare_folders(bool ask) {
     // The first time: what the system's folders have may be copied here (never moved, never written over)
     std::vector<std::pair<std::filesystem::path, std::filesystem::path>> copies;
     auto consider = [&](const char* name) {
-        const std::filesystem::path to = portable / std::filesystem::u8path(name);
+        const std::filesystem::path to = portable / std::filesystem::u8path(recomp::FolderName(name));
         for (const auto& copy : copies) {
             if (copy.second == to) {
                 return;

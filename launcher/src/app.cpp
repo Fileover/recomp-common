@@ -469,8 +469,8 @@ App::App(SDL_Window* window)
         }
     }
     find_shared();
-    if (!collection_ && about_.game_page && about_.open_on_game_page) {
-        page_ = static_cast<int>(about_.pages.size());
+    if (!collection_ && about_.game_page && (about_.open_on_game_page || about_.own_pages_after_game)) {
+        page_ = place_of(Page::Game);
     }
     // The keys and buttons: a port's game's, or a collection's first game's that is here (they are set for all)
     size_t first = 0;
@@ -589,7 +589,49 @@ int App::page_count() const {
     if (collection_) {
         return fixed_pages() + static_cast<int>(rows().size());
     }
-    return static_cast<int>(about_.pages.size()) + (about_.game_page ? 3 : 2);
+    return static_cast<int>(single_layout().size());
+}
+
+std::vector<int> App::single_layout() const {
+    const auto page = [](Page kind) { return -1 - static_cast<int>(kind); };
+    std::vector<int> layout, own;
+    for (size_t i = 0; i < about_.pages.size(); i++) {
+        own.push_back(static_cast<int>(i));
+    }
+    const bool online = about_.online_page && about_.online.host_argument && about_.online.join_argument;
+    if (!about_.own_pages_after_game) {
+        layout = own;
+    }
+    if (about_.game_page) {
+        layout.push_back(page(Page::Game));
+    }
+    if (online) {
+        layout.push_back(page(Page::Online));
+    }
+    if (about_.own_pages_after_game) {
+        layout.insert(layout.end(), own.begin(), own.end());
+    }
+    layout.push_back(page(Page::Features));
+    layout.push_back(page(Page::Controllers));
+    return layout;
+}
+
+int App::port_page(int index) const {
+    if (collection_) {
+        return -1;
+    }
+    const std::vector<int> layout = single_layout();
+    return index >= 0 && static_cast<size_t>(index) < layout.size() && layout[static_cast<size_t>(index)] >= 0 ? layout[static_cast<size_t>(index)] : -1;
+}
+
+int App::place_of(Page kind) const {
+    const std::vector<int> layout = single_layout();
+    for (size_t i = 0; i < layout.size(); i++) {
+        if (layout[i] == -1 - static_cast<int>(kind)) {
+            return static_cast<int>(i);
+        }
+    }
+    return 0;
 }
 
 void App::set_page(const std::string& id) {
@@ -821,11 +863,11 @@ Page App::own_page(int index, size_t* which) const {
         }
         return row.series ? Page::Series : Page::Title;
     }
-    int own = index - static_cast<int>(about_.pages.size());
-    if (own < 0) {
+    const std::vector<int> layout = single_layout();
+    if (index < 0 || static_cast<size_t>(index) >= layout.size() || layout[static_cast<size_t>(index)] >= 0) {
         return Page::Count;
     }
-    return static_cast<Page>(about_.game_page ? own : own + 1);
+    return static_cast<Page>(-1 - layout[static_cast<size_t>(index)]);
 }
 
 launcher::PageContext App::context(float width) {
@@ -1234,19 +1276,21 @@ bool App::consume(const SDL_Event& event) {
         }
         // To the port's page that is shown if it takes files, else to the first of its pages that does,
         // else it is the game file
-        int count = static_cast<int>(about_.pages.size());
-        for (int i = -1; i < (about_.open_on_game_page ? 0 : count); i++) {
-            int index = i < 0 ? page_ : i;
-            if (index < count && about_.pages[index].drop) {
+        const int count = page_count();
+        const bool first_only = about_.open_on_game_page || about_.own_pages_after_game;
+        for (int i = -1; i < (first_only ? 0 : count); i++) {
+            const int index = i < 0 ? page_ : i;
+            const int own = port_page(index);
+            if (own >= 0 && about_.pages[static_cast<size_t>(own)].drop) {
                 launcher::PageContext dropped = context(0.0f);
-                about_.pages[index].drop(dropped, event.drop.data);
+                about_.pages[static_cast<size_t>(own)].drop(dropped, event.drop.data);
                 page_ = index;
                 return true;
             }
         }
         if (about_.game_page) {
             use_game_file(0, event.drop.data);
-            page_ = count;
+            page_ = place_of(Page::Game);
         }
         return true;
     }
@@ -1511,7 +1555,6 @@ void App::sidebar(float height) {
         ui::set_value(indicator, drag_at);
     }
     float at = (dragging_shown ? drag_at : ui::animate(indicator, row_y(static_cast<float>(page_)), 18.0f)) - scroll;
-    int custom = collection_ ? 0 : static_cast<int>(about_.pages.size());
     ImVec2 pill = origin + ImVec2(px(20), at);
     ImGui::GetWindowDrawList()->AddRectFilled(pill, pill + ImVec2(px(inner), px(36)), p.control_hover, px(10));
     if (collection_) {
@@ -1555,7 +1598,8 @@ void App::sidebar(float height) {
         }
         y -= scroll;
         ImGui::SetCursorScreenPos(origin + ImVec2(px(20), y));
-        const char* name = i < custom ? about_.pages[i].name
+        const int port = port_page(i);
+        const char* name = port >= 0 ? about_.pages[static_cast<size_t>(port)].name
                            : !row     ? own[static_cast<int>(kind)]
                            : row->series ? slots_[which]->series.c_str()
                                          : slots_[which]->name.c_str();
@@ -1683,12 +1727,13 @@ void App::page(float width, float height) {
     size_t which = 0;
     Page kind = own_page(page_, &which);
     slot_ = kind == Page::Title ? which : 0;
-    if (!collection_ && page_ < static_cast<int>(about_.pages.size())) {
+    if (port_page(page_) >= 0) {
         launcher::PageContext shown = context(content);
-        about_.pages[page_].draw(shown);
+        about_.pages[static_cast<size_t>(port_page(page_))].draw(shown);
     }
     if (room_url()) {
-        follow_room(kind == (collection_ ? Page::Online : Page::Game) && !any_running());
+        const bool online_page = collection_ || about_.online_page;
+        follow_room(kind == (online_page ? Page::Online : Page::Game) && !any_running());
     }
     switch (kind) {
     case Page::Game:
@@ -1710,7 +1755,11 @@ void App::page(float width, float height) {
         series_page(which, content);
         break;
     case Page::Online:
-        online_page(content);
+        if (collection_) {
+            online_page(content);
+        } else {
+            single_online_page(content);
+        }
         break;
     case Page::Multi:
         multi_page(content);
@@ -1902,7 +1951,9 @@ bool App::play_button(size_t which, float width) {
 void App::play_cards(size_t which, float width, bool ready) {
     const ui::Palette& p = ui::palette();
     Slot& one = *slots_[which];
-    online_card(which, width, ready);
+    if (collection_ || !about_.online_page) {
+        online_card(which, width, ready);
+    }
     // Linux and Steam Deck: shortcuts for Steam's Game Mode.
     static const bool steam = can_add_to_steam();
     if (steam) {
@@ -1935,13 +1986,16 @@ void App::online_card(size_t which, float width, bool ready) {
         return;
     }
     load_online();
-    ui::gap(28);
-    ui::text("ONLINE", Font::Semibold, ui::size::kDetail, p.secondary);
-    if (online.detail && *online.detail) {
-        ui::gap(6);
-        ui::text(online.detail, Font::Regular, ui::size::kDetail, p.secondary, width);
+    if (collection_ || !about_.online_page) {
+        // (on the Game page; on an Online page of its own, the page's heading says it)
+        ui::gap(28);
+        ui::text("ONLINE", Font::Semibold, ui::size::kDetail, p.secondary);
+        if (online.detail && *online.detail) {
+            ui::gap(6);
+            ui::text(online.detail, Font::Regular, ui::size::kDetail, p.secondary, width);
+        }
+        ui::gap(10);
     }
-    ui::gap(10);
     Card card(width);
     std::string here;
     for (const std::string& address : online_here_) {
@@ -2746,15 +2800,25 @@ void App::game_page(float width) {
     bool ready = play_button(0, width);
     ui::gap(28);
 #ifdef LAUNCHER_UPDATE_REPO
-    update_card(width, true);
+    update_card(width, true, true);  // (at the top, new version or not, as a collection's Games page has it)
+    ui::gap(28);
 #endif
     file_card(0, width);
     display_cards(0, width);
     play_cards(0, width, ready);
     files_card(width);
-#ifdef LAUNCHER_UPDATE_REPO
-    update_card(width, false);
-#endif
+}
+
+// A launcher of one game's Online page (Description::online_page): what the Game page's Online card has, on a page
+void App::single_online_page(float width) {
+    layout::heading("Online", about_.online.detail, width);
+    bool ready;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ready = !slots_[0]->checking && slots_[0]->file.usable();
+    }
+    ready = ready && slots_[0]->has_program() && !slots_[0]->game.running();
+    online_card(0, width, ready);
 }
 
 // A collection's first page: every game, its file (or where to find them all), and Play

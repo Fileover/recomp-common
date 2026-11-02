@@ -2949,23 +2949,29 @@ void App::update_card(float width, bool top, bool always) {
                         : news                            ? "Version " + status.version + " is out"
                                                           : "Version " LAUNCHER_VERSION;
     std::string detail = status.state == State::Idle ? std::string("Not checked yet.") : status.message;
-    if (status.state == State::Available && running) {
+    if ((status.state == State::Available || status.state == State::Downloaded) && running) {
         detail += " Quit the games that are running first.";
     }
     row(width, title.c_str(), detail.c_str(), news ? 250.0f : 150.0f, 36.0f, [&] {
         switch (status.state) {
         case State::Available:
         case State::NotInstalled:
+        case State::Downloaded:
             // (the release's page: what is new, and its downloads)
             if (ui::button(status.state == State::NotInstalled ? "Releases" : "What's new", Kind::Secondary, 120.0f, !status.notes_url.empty()) &&
                 interactive_) {  // (pictures for a test open nothing)
                 SDL_OpenURL(status.notes_url.c_str());
             }
             ImGui::SameLine(0.0f, px(10));
-            if (!status.download_url.empty()) {
-                // (Android: the new APK, which the browser downloads, for the system's installer)
+            if (status.state == State::NotInstalled && !status.download_url.empty()) {
+                // (Android, a release without checksums: the new APK, which the browser downloads, for the system's installer)
                 if (ui::button("Download", Kind::Primary, 120.0f) && interactive_) {
                     SDL_OpenURL(status.download_url.c_str());
+                }
+            } else if (status.state == State::Downloaded) {
+                // (Android: the installer again, if the player said not now or had to allow it in Settings first)
+                if (ui::button("Install", Kind::Primary, 120.0f, !running)) {
+                    updater_->install();
                 }
             } else if (ui::button("Update", Kind::Primary, 120.0f, status.state == State::Available && !running)) {
                 updater_->install();
@@ -3005,7 +3011,8 @@ bool App::update_news() const {
 #ifdef LAUNCHER_UPDATE_REPO
     using State = launcher::Updater::State;
     const State state = updater_->status().state;
-    return state == State::Available || state == State::Installing || state == State::Installed || state == State::NotInstalled;
+    return state == State::Available || state == State::Installing || state == State::Installed || state == State::NotInstalled ||
+           state == State::Downloaded;
 #else
     return false;
 #endif

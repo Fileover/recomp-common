@@ -17,6 +17,10 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#ifdef __ANDROID__
+#include <SDL3/SDL_system.h>
+#include <jni.h>
+#endif
 #include <fcntl.h>
 #include <spawn.h>
 #include <sys/wait.h>
@@ -371,6 +375,38 @@ std::string plain_version(std::string tag) {
     return !tag.empty() && (tag[0] == 'v' || tag[0] == 'V') ? tag.substr(1) : tag;
 }
 
+#ifdef __ANDROID__
+// Where the APK is downloaded: the app's cache (the port's activity gives Android's installer only files from there)
+fs::path apk_folder() {
+    const char* cache = SDL_GetAndroidCachePath();
+    return cache && *cache ? fs::path(cache) / "update" : fs::path();
+}
+
+// The port's activity's installPackage(String path): 0 the installer opened, 1 Settings first, -1 it couldn't
+int android_install(const fs::path& apk) {
+    JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+    jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
+    if (!env || !activity) {
+        return -1;
+    }
+    int result = -1;
+    jclass activity_class = env->GetObjectClass(activity);
+    jmethodID install = env->GetMethodID(activity_class, "installPackage", "(Ljava/lang/String;)I");
+    if (install) {
+        jstring path = env->NewStringUTF(apk.string().c_str());
+        result = env->CallIntMethod(activity, install, path);
+        env->DeleteLocalRef(path);
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        result = -1;
+    }
+    env->DeleteLocalRef(activity_class);
+    env->DeleteLocalRef(activity);
+    return result;
+}
+#endif
+
 }  // namespace
 
 // ---- the parts the tests see too ---------------------------------------------------------------
@@ -489,6 +525,28 @@ int Updater::compare_versions(const std::string& a, const std::string& b) {
     return pa.size() < pb.size() ? -1 : pa.size() > pb.size() ? 1 : 0;
 }
 
+std::string Updater::sum_in(const std::string& sums, const std::string& name) {
+    std::stringstream lines(sums);
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        const size_t space = line.find(' ');
+        if (space != 64 || !is_sha256(line.substr(0, 64))) {
+            continue;
+        }
+        size_t at = line.find_first_not_of(' ', space);
+        if (at != std::string::npos && line[at] == '*') {
+            at++;
+        }
+        if (at != std::string::npos && line.compare(at, std::string::npos, name) == 0) {
+            return line.substr(0, 64);
+        }
+    }
+    return "";
+}
+
 std::string Updater::sha256_of_file(const fs::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) {
@@ -522,6 +580,12 @@ Updater::Updater(fs::path program_folder, std::string launcher_name, std::string
     if (fs::is_directory(top_ / ".update", error)) {
         fs::remove_all(top_ / ".update", error);
     }
+#ifdef __ANDROID__
+    // (the APK of the last update, installed by now or not wanted)
+    if (const fs::path apks = apk_folder(); !apks.empty()) {
+        fs::remove_all(apks, error);
+    }
+#endif
 }
 
 Updater::~Updater() {
@@ -571,7 +635,7 @@ void Updater::check() {
 }
 
 void Updater::install() {
-    if (status().state == State::Available) {
+    if (status().state == State::Available || status().state == State::Downloaded) {
         run(&Updater::install_work);
     }
 }
@@ -586,8 +650,17 @@ void Updater::install_work() {
         std::lock_guard<std::mutex> lock(mutex_);
         status_.fraction = 0.0;
     }
+#ifdef __ANDROID__
+    if (!apk_.empty()) {
+        set(State::Installing, "Opening Android's installer…");  // (downloaded already)
+    } else {
+        set(State::Installing, "Downloading…");
+    }
+    do_install_apk();
+#else
     set(State::Installing, "Downloading…");
     do_install();
+#endif
 }
 
 bool Updater::do_check() {
@@ -609,13 +682,20 @@ bool Updater::do_check() {
     // (Android: an app can't replace its own files, only the system's installer can, so there's no manifest: the
     // newest release's APK, which the player downloads and opens, and Android installs over this one)
     const Json* newest = nullptr;
-    std::string newest_version, apk;
+    std::string newest_version, apk, apk_name, sums;
+    uint64_t apk_size = 0;
     for (const Json& release : releases.items) {
-        std::string url;
+        std::string url, name_of_apk, sums_url;
+        uint64_t size = 0;
         for (const Json& asset : release["assets"].items) {
             const std::string& name = asset["name"].text;
-            if (name.size() > 4 && name.compare(name.size() - 4, 4, ".apk") == 0 && name.find("DO-NOT-SHARE") == std::string::npos) {
+            if (name.size() > 4 && name.compare(name.size() - 4, 4, ".apk") == 0 && name.find("DO-NOT-SHARE") == std::string::npos &&
+                safe_path(name) && name.find('/') == std::string::npos) {
                 url = asset["browser_download_url"].text;
+                name_of_apk = name;
+                size = std::strtoull(asset["size"].text.c_str(), nullptr, 10);
+            } else if (name == "SHA256SUMS.txt") {
+                sums_url = asset["browser_download_url"].text;
             }
         }
         const std::string version = plain_version(release["tag_name"].text);
@@ -624,6 +704,9 @@ bool Updater::do_check() {
             newest = &release;
             newest_version = version;
             apk = url;
+            apk_name = name_of_apk;
+            apk_size = size;
+            sums = sums_url;
         }
     }
     if (!newest || compare_versions(newest_version, version_) <= 0) {
@@ -636,8 +719,21 @@ bool Updater::do_check() {
         status_.notes_url = (*newest)["html_url"].text;
         status_.download_url = apk;
     }
-    set(State::NotInstalled, "You have " + version_ + ". Download the new one and open it: Android installs it over this one, and your " +
-                                 "settings, saves and ROM sets stay.");
+    if (sums.empty() || apk_size == 0 || apk_folder().empty()) {
+        // (nothing to check the APK with here: the player downloads it in the browser)
+        set(State::NotInstalled, "You have " + version_ + ". Download the new one and open it: Android installs it over this one, and your " +
+                                     "settings, saves and ROM sets stay.");
+        return true;
+    }
+    if (apk_url_ != apk) {
+        apk_.clear();  // (a download of an older new version isn't this one)
+    }
+    apk_url_ = apk;
+    apk_name_ = apk_name;
+    apk_size_ = apk_size;
+    sums_url_ = sums;
+    set(State::Available, "You have " + version_ + ". The download is " + megabytes(apk_size_) + "; Android asks you to confirm, " +
+                              "and your settings, saves and ROM sets stay.");
     return true;
 #endif
     // The newest release with a manifest for this system (a beta only while this is a beta), and this one's own
@@ -726,23 +822,7 @@ bool Updater::do_install() {
     };
     // 1. The archive, downloaded and checked, unpacked, and every file that differs checked
     const fs::path archive = staging / next_.archive, unpacked = staging / "new";
-    std::atomic<bool> downloading{true};
-    std::thread progress([&] {  // (curl writes the file as it comes)
-        while (downloading) {
-            std::error_code ignored;
-            const uint64_t got = fs::exists(archive, ignored) ? fs::file_size(archive, ignored) : 0;
-            {
-                std::lock_guard<std::mutex> lock(mutex_);
-                status_.fraction = next_.archive_size ? std::min(1.0, static_cast<double>(got) / static_cast<double>(next_.archive_size)) : 0.0;
-            }
-            set(State::Installing, "Downloading " + megabytes(got) + " of " + megabytes(next_.archive_size) + "…");
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
-        }
-    });
-    const int code = fetch_file(archive_url_, archive);
-    downloading = false;
-    progress.join();
-    if (code != 0) {
+    if (const int code = download(archive_url_, archive, next_.archive_size); code != 0) {
         return fail(curl_problem(code) + ".");
     }
     if (fs::file_size(archive, error) != next_.archive_size || sha256_of_file(archive) != next_.archive_sha256) {
@@ -827,6 +907,83 @@ bool Updater::do_install() {
     }
     set(State::Installed, "Starting the new version…");
     return true;
+}
+
+int Updater::download(const std::string& url, const fs::path& to, uint64_t size) {
+    std::atomic<bool> downloading{true};
+    std::thread progress([&] {  // (curl writes the file as it comes)
+        while (downloading) {
+            std::error_code ignored;
+            const uint64_t got = fs::exists(to, ignored) ? fs::file_size(to, ignored) : 0;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                status_.fraction = size ? std::min(1.0, static_cast<double>(got) / static_cast<double>(size)) : 0.0;
+            }
+            set(State::Installing, "Downloading " + megabytes(got) + " of " + megabytes(size) + "…");
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        }
+    });
+    const int code = fetch_file(url, to);
+    downloading = false;
+    progress.join();
+    return code;
+}
+
+bool Updater::do_install_apk() {
+#ifdef __ANDROID__
+    std::error_code error;
+    const fs::path folder = apk_folder();
+    auto fail = [&](const std::string& why) {
+        apk_.clear();
+        fs::remove_all(folder, error);
+        set(State::Failed, "Couldn't update: " + why + " Nothing was changed.");
+        return false;
+    };
+    // 1. The APK, downloaded and checked against the release's SHA256SUMS.txt (once: a second Update only opens the installer)
+    if (apk_.empty() || !fs::is_regular_file(apk_, error)) {
+        apk_.clear();
+        fs::remove_all(folder, error);
+        if (!fs::create_directories(folder, error) || error) {
+            return fail("the app can't write to its cache (" + folder.string() + ").");
+        }
+        std::string sums;
+        if (const int code = fetch_text(sums_url_, sums); code != 0) {
+            return fail("the release's checksums couldn't be downloaded: " + curl_problem(code) + ".");
+        }
+        const std::string sha256 = sum_in(sums, apk_name_);
+        if (sha256.empty()) {
+            return fail("the release's checksums don't name " + apk_name_ + ".");
+        }
+        const fs::path apk = folder / apk_name_;
+        if (const int code = download(apk_url_, apk, apk_size_); code != 0) {
+            return fail(curl_problem(code) + ".");
+        }
+        set(State::Installing, "Checking the download…");
+        if (fs::file_size(apk, error) != apk_size_ || sha256_of_file(apk) != sha256) {
+            return fail("the download was not what the release says it is.");
+        }
+        apk_ = apk;
+    }
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        status_.fraction = 1.0;
+    }
+    // 2. Handed to Android's installer, which asks the player and installs it over this app (ending it)
+    switch (android_install(apk_)) {
+    case 0:
+        set(State::Downloaded, "Android asks you to install it: choose Install there. Your settings, saves and ROM sets stay. If you said not now, " +
+                                   std::string("choose Install here again."));
+        return true;
+    case 1:
+        set(State::Downloaded, "Android's Settings opened: allow this app to install apps, then come back, and Android asks you to install it. " +
+                                   std::string("If it doesn't, choose Install here."));
+        return true;
+    default:
+        return fail("Android's installer couldn't be opened.");
+    }
+#else
+    return false;
+#endif
 }
 
 bool Updater::relaunch(const std::vector<std::string>& args) const {

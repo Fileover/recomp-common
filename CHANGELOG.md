@@ -5,6 +5,11 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- **Updating on Android from the launcher** (cps2recomp #211): the update card's **Update** downloads the release's APK
+  into the app's cache, checks it against the release's `SHA256SUMS.txt` (`Updater::sum_in`), and hands it to the
+  port's activity (`installPackage(String path)`), which opens Android's installer (or first Android's Settings, for
+  the player to allow the app to install apps). Then the card says so (`State::Downloaded`), with **Install** to open
+  the installer again. A release without `SHA256SUMS.txt` still has **Download**, for the browser.
 - **A waiting room for a launcher of one game** (`Online::room`, `room_protocol`): what a collection's Online page has,
   on the Game page under the Online card: the invitations waiting for this player, and the players in the room to
   invite to the game. The launcher checks in while the Game page is open. `App::room_url()` and `room_protocol()` are

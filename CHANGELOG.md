@@ -10,6 +10,17 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
   Game page. **The port's own pages after Game** (`Description::own_pages_after_game`): Game, Online, then the
   port's pages, then Features and Controllers. `App::single_layout()` gives a one-game launcher's pages in order.
 - **The update card at the top of the Game page**, new version or not, as a collection's Games page has it.
+- **Paths with accents on Windows** (cps2recomp #223): SDL's paths and the ports' are UTF-8, and a
+  `std::filesystem::path` made from a narrow string reads it in the system's code page there, so a folder named with an
+  é, ã or ç was another folder. `Ini` takes a path given as text (`std::string`, `const char *`) as UTF-8,
+  `LoadBindings` reads settings.ini by its wide name, and the launcher keeps its own folder (`SDL_GetBasePath`), the
+  file dialog's start, the player's folder (`SDL_GetPrefPath`) and the settings path as UTF-8, and gives the updater's
+  programs (curl, tar) their paths as UTF-8.
+- **Updating on Android from the launcher** (cps2recomp #211): the update card's **Update** downloads the release's APK
+  into the app's cache, checks it against the release's `SHA256SUMS.txt` (`Updater::sum_in`), and hands it to the
+  port's activity (`installPackage(String path)`), which opens Android's installer (or first Android's Settings, for
+  the player to allow the app to install apps). Then the card says so (`State::Downloaded`), with **Install** to open
+  the installer again. A release without `SHA256SUMS.txt` still has **Download**, for the browser.
 - **A waiting room for a launcher of one game** (`Online::room`, `room_protocol`): what a collection's Online page has,
   on the Game page under the Online card: the invitations waiting for this player, and the players in the room to
   invite to the game. The launcher checks in while the Game page is open. `App::room_url()` and `room_protocol()` are

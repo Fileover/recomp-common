@@ -24,6 +24,7 @@
 #endif
 
 #include "folders.h"
+#include "gamepads.h"
 #include "layout.h"
 #include "online.h"
 #include "steam.h"
@@ -78,8 +79,9 @@ std::filesystem::path base_path() {
         return std::filesystem::path(info.dli_fname).parent_path();
     }
 #endif
+    // (SDL's paths are UTF-8: by their wide name on Windows, where a folder with an accent is not in the system's code page)
     const char* base = SDL_GetBasePath();
-    return base ? std::filesystem::path(base) : std::filesystem::current_path();
+    return base ? std::filesystem::u8path(base) : std::filesystem::current_path();
 }
 
 void wake() {
@@ -109,7 +111,8 @@ std::filesystem::path program_path(const std::string& exe) {
 }
 
 // The system's folder for a game's (or a collection's) things, named by it (SDL_GetPrefPath makes it)
-std::filesystem::path system_folder(const char* name) {
+std::filesystem::path system_folder(const char* game_name) {
+    const std::string name = recomp::FolderName(game_name);  // (what Windows takes as a folder's name)
 #ifdef __ANDROID__
     // (SDL_GetPrefPath is one folder for the whole app there: the app's own folder on the shared storage, which a
     // computer sees over USB in Android/data, with a folder for each name in it)
@@ -124,8 +127,8 @@ std::filesystem::path system_folder(const char* name) {
         return folder;
     }
 #endif
-    char* path = SDL_GetPrefPath("", name);
-    std::filesystem::path folder = path ? std::filesystem::path(path) : base_path() / recomp::kPortableFolder / std::filesystem::u8path(name);
+    char* path = SDL_GetPrefPath("", name.c_str());
+    std::filesystem::path folder = path ? std::filesystem::u8path(path) : base_path() / recomp::kPortableFolder / std::filesystem::u8path(name);
     SDL_free(path);
     return folder;
 }
@@ -137,7 +140,7 @@ std::filesystem::path player_folder(const char* name, const char* home_env) {
         return home;
     }
     if (std::filesystem::path portable = recomp::PortableFolder(base_path()); !portable.empty()) {
-        return portable / std::filesystem::u8path(name);
+        return portable / std::filesystem::u8path(recomp::FolderName(name));
     }
     return system_folder(name);  // where the game keeps settings.ini too
 }
@@ -299,7 +302,7 @@ bool prepare_folders(bool ask) {
     // The first time: what the system's folders have may be copied here (never moved, never written over)
     std::vector<std::pair<std::filesystem::path, std::filesystem::path>> copies;
     auto consider = [&](const char* name) {
-        const std::filesystem::path to = portable / std::filesystem::u8path(name);
+        const std::filesystem::path to = portable / std::filesystem::u8path(recomp::FolderName(name));
         for (const auto& copy : copies) {
             if (copy.second == to) {
                 return;
@@ -409,6 +412,8 @@ App::App(SDL_Window* window)
       program_folder_(base_path()),
       about_(the_description()) {
     prefs_.load();
+    // (controllers SDL doesn't know: gamecontrollerdb.txt beside the launcher or in its folder, as the game reads it)
+    recomp::AddGamepadMappings({program_folder_, folder_});
     for (const Target& target : targets()) {
         auto slot = std::make_unique<Slot>(target.folder / "settings.ini");
         slot->about = target.about;
@@ -475,12 +480,12 @@ App::App(SDL_Window* window)
             break;
         }
     }
-    bindings_ = recomp::LoadBindings(slots_[first]->settings.path().string(), shared_table());
+    bindings_ = recomp::LoadBindings(slots_[first]->settings.path().u8string(), shared_table());
     // (and each game's own, for those given one)
     own_bindings_.resize(slots_.size());
     for (size_t which = 0; which < slots_.size(); which++) {
         if (own_layout(which)) {
-            own_bindings_[which] = recomp::LoadBindings(slots_[which]->settings.path().string(), slots_[which]->about->bindings);
+            own_bindings_[which] = recomp::LoadBindings(slots_[which]->settings.path().u8string(), slots_[which]->about->bindings);
         }
     }
 #ifdef LAUNCHER_UPDATE_REPO
@@ -947,7 +952,7 @@ void App::choose_game_file(size_t which) {
     return;
 #endif
     const Slot& one = *slots_[which];
-    std::string start = one.file_path.empty() ? std::string() : std::filesystem::path(one.file_path).parent_path().string();
+    std::string start = one.file_path.empty() ? std::string() : std::filesystem::u8path(one.file_path).parent_path().u8string();
     picked_for_ = which;
     SDL_ShowOpenFileDialog(
         [](void* self, const char* const* files, int) {
@@ -3009,23 +3014,29 @@ void App::update_card(float width, bool top, bool always) {
                         : news                            ? "Version " + status.version + " is out"
                                                           : "Version " LAUNCHER_VERSION;
     std::string detail = status.state == State::Idle ? std::string("Not checked yet.") : status.message;
-    if (status.state == State::Available && running) {
+    if ((status.state == State::Available || status.state == State::Downloaded) && running) {
         detail += " Quit the games that are running first.";
     }
     row(width, title.c_str(), detail.c_str(), news ? 250.0f : 150.0f, 36.0f, [&] {
         switch (status.state) {
         case State::Available:
         case State::NotInstalled:
+        case State::Downloaded:
             // (the release's page: what is new, and its downloads)
             if (ui::button(status.state == State::NotInstalled ? "Releases" : "What's new", Kind::Secondary, 120.0f, !status.notes_url.empty()) &&
                 interactive_) {  // (pictures for a test open nothing)
                 SDL_OpenURL(status.notes_url.c_str());
             }
             ImGui::SameLine(0.0f, px(10));
-            if (!status.download_url.empty()) {
-                // (Android: the new APK, which the browser downloads, for the system's installer)
+            if (status.state == State::NotInstalled && !status.download_url.empty()) {
+                // (Android, a release without checksums: the new APK, which the browser downloads, for the system's installer)
                 if (ui::button("Download", Kind::Primary, 120.0f) && interactive_) {
                     SDL_OpenURL(status.download_url.c_str());
+                }
+            } else if (status.state == State::Downloaded) {
+                // (Android: the installer again, if the player said not now or had to allow it in Settings first)
+                if (ui::button("Install", Kind::Primary, 120.0f, !running)) {
+                    updater_->install();
                 }
             } else if (ui::button("Update", Kind::Primary, 120.0f, status.state == State::Available && !running)) {
                 updater_->install();
@@ -3065,7 +3076,8 @@ bool App::update_news() const {
 #ifdef LAUNCHER_UPDATE_REPO
     using State = launcher::Updater::State;
     const State state = updater_->status().state;
-    return state == State::Available || state == State::Installing || state == State::Installed || state == State::NotInstalled;
+    return state == State::Available || state == State::Installing || state == State::Installed || state == State::NotInstalled ||
+           state == State::Downloaded;
 #else
     return false;
 #endif

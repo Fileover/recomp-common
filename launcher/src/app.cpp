@@ -79,8 +79,9 @@ std::filesystem::path base_path() {
         return std::filesystem::path(info.dli_fname).parent_path();
     }
 #endif
+    // (SDL's paths are UTF-8: by their wide name on Windows, where a folder with an accent is not in the system's code page)
     const char* base = SDL_GetBasePath();
-    return base ? std::filesystem::path(base) : std::filesystem::current_path();
+    return base ? std::filesystem::u8path(base) : std::filesystem::current_path();
 }
 
 void wake() {
@@ -127,7 +128,7 @@ std::filesystem::path system_folder(const char* game_name) {
     }
 #endif
     char* path = SDL_GetPrefPath("", name.c_str());
-    std::filesystem::path folder = path ? std::filesystem::path(path) : base_path() / recomp::kPortableFolder / std::filesystem::u8path(name);
+    std::filesystem::path folder = path ? std::filesystem::u8path(path) : base_path() / recomp::kPortableFolder / std::filesystem::u8path(name);
     SDL_free(path);
     return folder;
 }
@@ -479,12 +480,12 @@ App::App(SDL_Window* window)
             break;
         }
     }
-    bindings_ = recomp::LoadBindings(slots_[first]->settings.path().string(), shared_table());
+    bindings_ = recomp::LoadBindings(slots_[first]->settings.path().u8string(), shared_table());
     // (and each game's own, for those given one)
     own_bindings_.resize(slots_.size());
     for (size_t which = 0; which < slots_.size(); which++) {
         if (own_layout(which)) {
-            own_bindings_[which] = recomp::LoadBindings(slots_[which]->settings.path().string(), slots_[which]->about->bindings);
+            own_bindings_[which] = recomp::LoadBindings(slots_[which]->settings.path().u8string(), slots_[which]->about->bindings);
         }
     }
 #ifdef LAUNCHER_UPDATE_REPO
@@ -909,7 +910,7 @@ void App::choose_game_file(size_t which) {
     return;
 #endif
     const Slot& one = *slots_[which];
-    std::string start = one.file_path.empty() ? std::string() : std::filesystem::path(one.file_path).parent_path().string();
+    std::string start = one.file_path.empty() ? std::string() : std::filesystem::u8path(one.file_path).parent_path().u8string();
     picked_for_ = which;
     SDL_ShowOpenFileDialog(
         [](void* self, const char* const* files, int) {

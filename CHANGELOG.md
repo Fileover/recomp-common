@@ -5,6 +5,12 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- **Paths with accents on Windows** (cps2recomp #223): SDL's paths and the ports' are UTF-8, and a
+  `std::filesystem::path` made from a narrow string reads it in the system's code page there, so a folder named with an
+  é, ã or ç was another folder. `Ini` takes a path given as text (`std::string`, `const char *`) as UTF-8,
+  `LoadBindings` reads settings.ini by its wide name, and the launcher keeps its own folder (`SDL_GetBasePath`), the
+  file dialog's start, the player's folder (`SDL_GetPrefPath`) and the settings path as UTF-8, and gives the updater's
+  programs (curl, tar) their paths as UTF-8.
 - **Updating on Android from the launcher** (cps2recomp #211): the update card's **Update** downloads the release's APK
   into the app's cache, checks it against the release's `SHA256SUMS.txt` (`Updater::sum_in`), and hands it to the
   port's activity (`installPackage(String path)`), which opens Android's installer (or first Android's Settings, for

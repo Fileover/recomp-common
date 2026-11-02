@@ -128,7 +128,7 @@ std::filesystem::path system_folder(const char* game_name) {
     }
 #endif
     char* path = SDL_GetPrefPath("", name.c_str());
-    std::filesystem::path folder = path ? std::filesystem::path(path) : base_path() / recomp::kPortableFolder / std::filesystem::u8path(name);
+    std::filesystem::path folder = path ? std::filesystem::u8path(path) : base_path() / recomp::kPortableFolder / std::filesystem::u8path(name);
     SDL_free(path);
     return folder;
 }

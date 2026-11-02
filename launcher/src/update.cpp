@@ -324,21 +324,23 @@ int fetch_file(const std::string& url, const fs::path& to) {
     }
     return run_program(curl_program(),
                        {"-fsSL", "--connect-timeout", "15", "--speed-limit", "1024", "--speed-time", "60", "--retry", "2", "-A", "recomp-launcher", "-o",
-                        to.string(), url},
+                        to.u8string(), url},
                        nullptr);
 }
 
 // The archive unpacked into `into` by the system's own program for it (no shell): its exit code
+// (run_program takes its arguments as UTF-8, as every path here is given: a narrow .string() is the system's code page
+// on Windows, which a folder with an accent in it is not in)
 int unpack_archive(const fs::path& archive, const fs::path& into) {
 #if defined(__APPLE__)
-    return run_program("/usr/bin/ditto", {"-x", "-k", archive.string(), into.string()}, nullptr);
+    return run_program("/usr/bin/ditto", {"-x", "-k", archive.u8string(), into.u8string()}, nullptr);
 #elif defined(_WIN32)
     wchar_t system[MAX_PATH];
     UINT n = GetSystemDirectoryW(system, MAX_PATH);
     const fs::path tar = n > 0 && n < MAX_PATH ? fs::path(system) / L"tar.exe" : fs::path(L"tar.exe");  // (it reads zips too)
-    return run_program(tar, {"-xf", archive.string(), "-C", into.string()}, nullptr);
+    return run_program(tar, {"-xf", archive.u8string(), "-C", into.u8string()}, nullptr);
 #else
-    return run_program("tar", {"-xzf", archive.string(), "-C", into.string()}, nullptr);
+    return run_program("tar", {"-xzf", archive.u8string(), "-C", into.u8string()}, nullptr);
 #endif
 }
 
@@ -811,7 +813,7 @@ bool Updater::do_install() {
     const fs::path staging = top_ / ".update";
     fs::remove_all(staging, error);
     if (!fs::create_directories(staging / "old", error) || error) {
-        set(State::Failed, "Couldn't update: the launcher can't write to its folder (" + top_.string() +
+        set(State::Failed, "Couldn't update: the launcher can't write to its folder (" + top_.u8string() +
                                "). Move it to a folder of your own, or download the new version from the releases page.");
         return false;
     }
@@ -944,7 +946,7 @@ bool Updater::do_install_apk() {
         apk_.clear();
         fs::remove_all(folder, error);
         if (!fs::create_directories(folder, error) || error) {
-            return fail("the app can't write to its cache (" + folder.string() + ").");
+            return fail("the app can't write to its cache (" + folder.u8string() + ").");
         }
         std::string sums;
         if (const int code = fetch_text(sums_url_, sums); code != 0) {

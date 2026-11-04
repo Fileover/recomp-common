@@ -2103,6 +2103,7 @@ void App::stopped_note(Slot& one, float width) {
     ui::text(help.c_str(), Font::Regular, ui::size::kDetail, p.secondary, width);
     ImGui::PushID(one.id.c_str());
     bool row = false;
+    const float row_left = ImGui::GetCursorScreenPos().x;
 #ifndef __ANDROID__
     ui::gap(8);
     if (ui::button("Show the log", Kind::Secondary, 150.0f) && interactive_) {
@@ -2111,7 +2112,11 @@ void App::stopped_note(Slot& one, float width) {
     row = true;
 #endif
 #ifdef LAUNCHER_ISSUES_REPO
-    if (row) {
+    // (beside Show the log when both fit the page's width, as buttons grow to their labels; under it if not)
+    ui::push_font(Font::Semibold, ui::size::kBody);
+    const float report_width = std::max(px(180.0f), ImGui::CalcTextSize("Report on GitHub").x + px(40));
+    ui::pop_font();
+    if (row && ImGui::GetItemRectMax().x + px(10) + report_width <= row_left + width) {
         ImGui::SameLine(0.0f, px(10));
     } else {
         ui::gap(8);
@@ -2122,6 +2127,7 @@ void App::stopped_note(Slot& one, float width) {
     }
 #endif
     (void)row;
+    (void)row_left;
     ImGui::PopID();
 }
 

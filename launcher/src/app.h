@@ -92,6 +92,8 @@ private:
         GameProcess game;                // its program, while it runs (a collection's games can run at once)
         bool was_running = false;
         std::string play_error;          // why it did not start, or ""
+        std::filesystem::path stopped_log;  // its last run stopped with an error: that run's log, kept, or ""
+        std::string stopped_reason;      // and what the log says stopped it ("recomp stop: <this>"), or ""
         // What another game's menu changed of a feature they share while this one was running: set when it
         // ends, unless its own menu changed the same feature
         std::vector<std::pair<std::string, int>> pending;
@@ -175,7 +177,9 @@ private:
     void set_preset(const std::string& preset);
     void set_feature(Slot& slot, size_t index, int value);
     void set_shared(size_t index, int value);
-    void after_game(Slot& slot);  // (a collection's game has ended: what its menu changed is the others' too)
+    void after_game(Slot& slot);
+    void keep_stopped_log(Slot& slot);           // (it stopped with an error: its log kept before the next run)
+    void stopped_note(Slot& slot, float width);  // (and what to send, and where)  // (a collection's game has ended: what its menu changed is the others' too)
 
     // Controls (bindings.h): what each player's keys and gamepad buttons do, kept in settings.ini. A
     // collection's are every game's, but for a game given a layout of its own (launcher.ini, [controls]: its id

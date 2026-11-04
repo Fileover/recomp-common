@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -1351,6 +1352,11 @@ void App::frame() {
             after_game(one);
             show_focus_ = interactive_ && SDL_HasGamepad();  // (back from the game with a gamepad in hand)
             one.was_running = false;
+            if (one.game.exit_code() != 0 &&
+                !(collection_ && std::any_of(collection_->multi.begin(), collection_->multi.end(),
+                                             [&](const launcher::MultiMode& m) { return m.next_code == one.game.exit_code(); }))) {
+                keep_stopped_log(one);
+            }
             if (multi_.mode >= 0 && multi_.at < multi_.games.size() && multi_.games[multi_.at] == which) {
                 multi_after(one.game.exit_code() == collection_->multi[static_cast<size_t>(multi_.mode)].next_code);
             }
@@ -1941,11 +1947,120 @@ bool App::play_button(size_t which, float width) {
     } else if (!one.game.running() && one.game.exit_code() != 0 &&
                !(collection_ && std::any_of(collection_->multi.begin(), collection_->multi.end(),
                                             [&](const launcher::MultiMode& m) { return m.next_code == one.game.exit_code(); }))) {
-        ui::gap(10);
-        std::string text = "The game stopped with code " + std::to_string(one.game.exit_code()) + ".";
-        ui::text(text.c_str(), Font::Regular, ui::size::kDetail, p.danger, width);
+        stopped_note(one, width);
     }
     return ready;
+}
+
+// The game's log is written over at each start: the log of a run that stopped with an error is kept beside it
+// (logs/stopped-<when>.log, the newest five), to send with a report
+void App::keep_stopped_log(Slot& one) {
+    namespace fs = std::filesystem;
+    one.stopped_log.clear();
+    one.stopped_reason.clear();
+    const fs::path logs = one.folder / "logs";
+    std::error_code error;
+    if (!fs::exists(logs / "game.log", error)) {
+        return;
+    }
+    std::time_t now = std::time(nullptr);
+    std::tm parts{};
+#ifdef _WIN32
+    localtime_s(&parts, &now);
+#else
+    localtime_r(&now, &parts);
+#endif
+    char name[64];
+    std::strftime(name, sizeof name, "stopped-%Y-%m-%d-%H%M%S.log", &parts);
+    fs::copy_file(logs / "game.log", logs / name, fs::copy_options::overwrite_existing, error);
+    if (error) {
+        return;
+    }
+    one.stopped_log = logs / name;
+    // (the newest five kept; the names sort by time)
+    std::vector<fs::path> kept;
+    for (const auto& entry : fs::directory_iterator(logs, error)) {
+        const std::string file = entry.path().filename().u8string();
+        if (file.rfind("stopped-", 0) == 0 && entry.path().extension() == ".log") {
+            kept.push_back(entry.path());
+        }
+    }
+    std::sort(kept.begin(), kept.end());
+    for (size_t i = 0; i + 5 < kept.size(); i++) {
+        fs::remove(kept[i], error);
+    }
+    // What stopped it, when the runtime said ("recomp stop: <id> ..."): its last such line
+    std::ifstream in(one.stopped_log, std::ios::binary);
+    std::string line;
+    while (std::getline(in, line)) {
+        const size_t at = line.find("recomp stop: ");
+        if (at != std::string::npos) {
+            std::string id = line.substr(at + 13);
+            id = id.substr(0, id.find(' '));
+            while (!id.empty() && (id.back() == '\r' || id.back() == '\n')) {
+                id.pop_back();
+            }
+            one.stopped_reason = id;
+        }
+    }
+}
+
+// A game that stopped with an error: the code and the reason, the log to send, and where to report it
+void App::stopped_note(Slot& one, float width) {
+    const ui::Palette& p = ui::palette();
+    ui::gap(10);
+    std::string text = (collection_ ? one.name + " stopped" : std::string("The game stopped")) + " with code " +
+                       std::to_string(one.game.exit_code()) +
+                       (one.stopped_reason.empty() ? std::string(".") : " (" + one.stopped_reason + ").");
+    ui::text(text.c_str(), Font::Regular, ui::size::kDetail, p.danger, width);
+    if (one.stopped_log.empty()) {
+        return;
+    }
+    ui::gap(6);
+#ifdef LAUNCHER_ISSUES_REPO
+    std::string help = "To report it, open an issue on GitHub (Report below), say what you were doing, and attach this "
+                       "run's log: " + one.stopped_log.u8string();
+#else
+    std::string help = "To report it, say what you were doing and send this run's log: " + one.stopped_log.u8string();
+#endif
+#ifdef __ANDROID__
+    help += " (a computer sees it over USB, in Android/data)";
+#endif
+    ui::text(help.c_str(), Font::Regular, ui::size::kDetail, p.secondary, width);
+    ImGui::PushID(one.id.c_str());
+    bool row = false;
+#ifndef __ANDROID__
+    ui::gap(8);
+    if (ui::button("Show the log", Kind::Secondary, 150.0f) && interactive_) {
+        SDL_OpenURL(file_url(one.stopped_log.parent_path()).c_str());
+    }
+    row = true;
+#endif
+#ifdef LAUNCHER_ISSUES_REPO
+    if (row) {
+        ImGui::SameLine(0.0f, px(10));
+    } else {
+        ui::gap(8);
+    }
+    if (ui::button("Report on GitHub", Kind::Secondary, 180.0f) && interactive_) {
+        std::string title = (collection_ ? one.name + ": the" : std::string("The")) + " game stopped with code " +
+                            std::to_string(one.game.exit_code()) +
+                            (one.stopped_reason.empty() ? std::string() : " (" + one.stopped_reason + ")");
+        std::string url = "https://github.com/" LAUNCHER_ISSUES_REPO "/issues/new?title=";
+        for (unsigned char c : title) {
+            if (std::isalnum(c) || std::strchr("-_.~", c)) {
+                url += static_cast<char>(c);
+            } else {
+                char escaped[4];
+                std::snprintf(escaped, sizeof escaped, "%%%02X", c);
+                url += escaped;
+            }
+        }
+        SDL_OpenURL(url.c_str());
+    }
+#endif
+    (void)row;
+    ImGui::PopID();
 }
 
 void App::play_cards(size_t which, float width, bool ready) {
@@ -2936,10 +3051,11 @@ void App::library_page(float width) {
     games.end();
     // (what went wrong with each game's last start)
     for (const auto& one : slots_) {
-        std::string text = !one->play_error.empty() ? one->name + ": " + one->play_error
-                           : !one->game.running() && one->game.exit_code() != 0
-                               ? one->name + " stopped with code " + std::to_string(one->game.exit_code()) + "."
-                               : std::string();
+        if (one->play_error.empty() && !one->game.running() && one->game.exit_code() != 0) {
+            stopped_note(*one, width);
+            continue;
+        }
+        std::string text = !one->play_error.empty() ? one->name + ": " + one->play_error : std::string();
         if (!text.empty()) {
             ui::gap(10);
             ui::text(text.c_str(), Font::Regular, ui::size::kDetail, p.danger, width);

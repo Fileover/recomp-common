@@ -353,6 +353,81 @@ bool prepare_folders(bool ask) {
     return true;
 }
 
+// The game's log is written over at each start: the log of a run that stopped with an error is kept beside it
+// (logs/stopped-<when>.log, the newest five), to send with a report
+StoppedLog keep_stopped_log(const std::filesystem::path& folder) {
+    namespace fs = std::filesystem;
+    StoppedLog kept;
+    const fs::path logs = folder / "logs";
+    std::error_code error;
+    if (!fs::exists(logs / "game.log", error)) {
+        return kept;
+    }
+    std::time_t now = std::time(nullptr);
+    std::tm parts{};
+#ifdef _WIN32
+    localtime_s(&parts, &now);
+#else
+    localtime_r(&now, &parts);
+#endif
+    char name[64];
+    std::strftime(name, sizeof name, "stopped-%Y-%m-%d-%H%M%S.log", &parts);
+    fs::copy_file(logs / "game.log", logs / name, fs::copy_options::overwrite_existing, error);
+    if (error) {
+        return kept;
+    }
+    kept.path = logs / name;
+    // (the newest five kept; the names sort by time)
+    std::vector<fs::path> old;
+    for (const auto& entry : fs::directory_iterator(logs, error)) {
+        const std::string file = entry.path().filename().u8string();
+        if (file.rfind("stopped-", 0) == 0 && entry.path().extension() == ".log") {
+            old.push_back(entry.path());
+        }
+    }
+    std::sort(old.begin(), old.end());
+    for (size_t i = 0; i + 5 < old.size(); i++) {
+        fs::remove(old[i], error);
+    }
+    // What stopped it, when the runtime said ("recomp stop: <id> ..."): its last such line
+    std::ifstream in(kept.path, std::ios::binary);
+    std::string line;
+    while (std::getline(in, line)) {
+        const size_t at = line.find("recomp stop: ");
+        if (at != std::string::npos) {
+            std::string id = line.substr(at + 13);
+            id = id.substr(0, id.find(' '));
+            while (!id.empty() && (id.back() == '\r' || id.back() == '\n')) {
+                id.pop_back();
+            }
+            kept.reason = id;
+        }
+    }
+    return kept;
+}
+
+// "<name> stopped with code N (reason)"
+static std::string stopped_text(const std::string& name, int code, const std::string& reason) {
+    return name + " stopped with code " + std::to_string(code) + (reason.empty() ? std::string() : " (" + reason + ")");
+}
+
+#ifdef LAUNCHER_ISSUES_REPO
+// A new GitHub issue in the port's repository, its title filled in
+static std::string issue_url(const std::string& title) {
+    std::string url = "https://github.com/" LAUNCHER_ISSUES_REPO "/issues/new?title=";
+    for (unsigned char c : title) {
+        if (std::isalnum(c) || std::strchr("-_.~", c)) {
+            url += static_cast<char>(c);
+        } else {
+            char escaped[4];
+            std::snprintf(escaped, sizeof escaped, "%%%02X", c);
+            url += escaped;
+        }
+    }
+    return url;
+}
+#endif
+
 int play_directly(const std::string& id, const std::vector<std::string>& extra) {
     // Straight into the game with the file chosen earlier (e.g. a Steam shortcut in Game Mode).
     std::vector<Target> all = targets();
@@ -393,7 +468,52 @@ int play_directly(const std::string& id, const std::vector<std::string>& extra) 
     while (game.running()) {
         SDL_Delay(100);
     }
-    return game.exit_code();
+    // (stopped with an error: no launcher window is open to say so, so a box says what to send and where)
+    const int code = game.exit_code();
+    const bool next = the_collection() && std::any_of(the_collection()->multi.begin(), the_collection()->multi.end(),
+                                                       [&](const launcher::MultiMode& m) { return m.next_code == code; });
+    if (code != 0 && !next) {
+        const StoppedLog kept = keep_stopped_log(target->folder);
+        std::string text = stopped_text(target->name, code, kept.reason) + ".";
+        if (!kept.path.empty()) {
+#ifdef LAUNCHER_ISSUES_REPO
+            text += "\n\nTo report it, open an issue on GitHub, say what you were doing, and attach this run's log:\n" +
+                    kept.path.u8string();
+#else
+            text += "\n\nTo report it, say what you were doing and send this run's log:\n" + kept.path.u8string();
+#endif
+        }
+        std::fprintf(stderr, "%s\n", text.c_str());
+        std::vector<SDL_MessageBoxButtonData> buttons;
+#ifdef LAUNCHER_ISSUES_REPO
+        buttons.push_back({0, 1, "Report on GitHub"});
+#endif
+#ifndef __ANDROID__
+        if (!kept.path.empty()) {
+            buttons.push_back({0, 2, "Show the log"});
+        }
+#endif
+        buttons.push_back({SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Close"});
+        const std::string title = target->name;
+        SDL_MessageBoxData box{};
+        box.flags = SDL_MESSAGEBOX_ERROR;
+        box.title = title.c_str();
+        box.message = text.c_str();
+        box.numbuttons = static_cast<int>(buttons.size());
+        box.buttons = buttons.data();
+        int chosen = 0;
+        if (SDL_ShowMessageBox(&box, &chosen)) {
+#ifdef LAUNCHER_ISSUES_REPO
+            if (chosen == 1) {
+                SDL_OpenURL(issue_url(stopped_text(target->name, code, kept.reason)).c_str());
+            }
+#endif
+            if (chosen == 2) {
+                SDL_OpenURL(file_url(kept.path.parent_path()).c_str());
+            }
+        }
+    }
+    return code;
 }
 
 std::filesystem::path App::Slot::program() const {
@@ -1952,66 +2072,17 @@ bool App::play_button(size_t which, float width) {
     return ready;
 }
 
-// The game's log is written over at each start: the log of a run that stopped with an error is kept beside it
-// (logs/stopped-<when>.log, the newest five), to send with a report
 void App::keep_stopped_log(Slot& one) {
-    namespace fs = std::filesystem;
-    one.stopped_log.clear();
-    one.stopped_reason.clear();
-    const fs::path logs = one.folder / "logs";
-    std::error_code error;
-    if (!fs::exists(logs / "game.log", error)) {
-        return;
-    }
-    std::time_t now = std::time(nullptr);
-    std::tm parts{};
-#ifdef _WIN32
-    localtime_s(&parts, &now);
-#else
-    localtime_r(&now, &parts);
-#endif
-    char name[64];
-    std::strftime(name, sizeof name, "stopped-%Y-%m-%d-%H%M%S.log", &parts);
-    fs::copy_file(logs / "game.log", logs / name, fs::copy_options::overwrite_existing, error);
-    if (error) {
-        return;
-    }
-    one.stopped_log = logs / name;
-    // (the newest five kept; the names sort by time)
-    std::vector<fs::path> kept;
-    for (const auto& entry : fs::directory_iterator(logs, error)) {
-        const std::string file = entry.path().filename().u8string();
-        if (file.rfind("stopped-", 0) == 0 && entry.path().extension() == ".log") {
-            kept.push_back(entry.path());
-        }
-    }
-    std::sort(kept.begin(), kept.end());
-    for (size_t i = 0; i + 5 < kept.size(); i++) {
-        fs::remove(kept[i], error);
-    }
-    // What stopped it, when the runtime said ("recomp stop: <id> ..."): its last such line
-    std::ifstream in(one.stopped_log, std::ios::binary);
-    std::string line;
-    while (std::getline(in, line)) {
-        const size_t at = line.find("recomp stop: ");
-        if (at != std::string::npos) {
-            std::string id = line.substr(at + 13);
-            id = id.substr(0, id.find(' '));
-            while (!id.empty() && (id.back() == '\r' || id.back() == '\n')) {
-                id.pop_back();
-            }
-            one.stopped_reason = id;
-        }
-    }
+    StoppedLog kept = ::keep_stopped_log(one.folder);
+    one.stopped_log = kept.path;
+    one.stopped_reason = kept.reason;
 }
 
 // A game that stopped with an error: the code and the reason, the log to send, and where to report it
 void App::stopped_note(Slot& one, float width) {
     const ui::Palette& p = ui::palette();
     ui::gap(10);
-    std::string text = (collection_ ? one.name + " stopped" : std::string("The game stopped")) + " with code " +
-                       std::to_string(one.game.exit_code()) +
-                       (one.stopped_reason.empty() ? std::string(".") : " (" + one.stopped_reason + ").");
+    std::string text = stopped_text(collection_ ? one.name : std::string("The game"), one.game.exit_code(), one.stopped_reason) + ".";
     ui::text(text.c_str(), Font::Regular, ui::size::kDetail, p.danger, width);
     if (one.stopped_log.empty()) {
         return;
@@ -2043,20 +2114,8 @@ void App::stopped_note(Slot& one, float width) {
         ui::gap(8);
     }
     if (ui::button("Report on GitHub", Kind::Secondary, 180.0f) && interactive_) {
-        std::string title = (collection_ ? one.name + ": the" : std::string("The")) + " game stopped with code " +
-                            std::to_string(one.game.exit_code()) +
-                            (one.stopped_reason.empty() ? std::string() : " (" + one.stopped_reason + ")");
-        std::string url = "https://github.com/" LAUNCHER_ISSUES_REPO "/issues/new?title=";
-        for (unsigned char c : title) {
-            if (std::isalnum(c) || std::strchr("-_.~", c)) {
-                url += static_cast<char>(c);
-            } else {
-                char escaped[4];
-                std::snprintf(escaped, sizeof escaped, "%%%02X", c);
-                url += escaped;
-            }
-        }
-        SDL_OpenURL(url.c_str());
+        SDL_OpenURL(issue_url(stopped_text(collection_ ? one.name : std::string(LAUNCHER_GAME_NAME), one.game.exit_code(),
+                                           one.stopped_reason)).c_str());
     }
 #endif
     (void)row;

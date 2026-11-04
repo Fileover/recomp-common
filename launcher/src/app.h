@@ -33,6 +33,13 @@
 // one page for each game whose file is chosen (Title).
 enum class Page { Game, Features, Controllers, Library, Title, Multi, Online, Series, Count };
 
+// A run that stopped with an error: its log, kept (logs/stopped-<when>.log), and what the runtime said stopped it
+struct StoppedLog {
+    std::filesystem::path path;
+    std::string reason;
+};
+StoppedLog keep_stopped_log(const std::filesystem::path& folder);
+
 // --play: straight into the game set up earlier (a collection's: --play ID), with `extra` after the launcher's
 // own arguments for it; the exit code
 int play_directly(const std::string& id, const std::vector<std::string>& extra = {});

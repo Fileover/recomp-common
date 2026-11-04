@@ -644,7 +644,7 @@ void App::set_page(const std::string& id) {
     // (a game in a closed series: the series opened)
     for (const std::vector<size_t>& unit : units()) {
         for (size_t which : unit) {
-            if (unit.size() > 1 && slots_[which]->id == id && !series_open(slots_[which]->series)) {
+            if (grouped(unit) && slots_[which]->id == id && !series_open(slots_[which]->series)) {
                 open_series(slots_[which]->series, true);
             }
         }
@@ -706,10 +706,16 @@ std::vector<std::vector<size_t>> App::units() const {
     return list;
 }
 
+// A unit is a series' row (with its games under it) when its games have a series, even if it is the only game of
+// it so far (a kind of game, Shoot-'em-ups, before the second comes)
+bool App::grouped(const std::vector<size_t>& unit) const {
+    return !unit.empty() && !slots_[unit.front()]->series.empty();
+}
+
 std::vector<App::Row> App::rows() const {
     std::vector<Row> list;
     for (const std::vector<size_t>& unit : units()) {
-        if (unit.size() == 1) {
+        if (!grouped(unit)) {
             list.push_back({unit.front()});
             continue;
         }
@@ -3097,7 +3103,7 @@ void App::title_page(size_t which, float width) {
     std::vector<std::vector<size_t>> places = units();
     std::vector<size_t> list;
     for (const std::vector<size_t>& unit : places) {
-        if (unit.size() > 1 && std::find(unit.begin(), unit.end(), which) != unit.end()) {
+        if (grouped(unit) && std::find(unit.begin(), unit.end(), which) != unit.end()) {
             list = unit;
         }
     }

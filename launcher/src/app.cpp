@@ -1243,7 +1243,10 @@ void App::play(size_t which, const std::vector<std::string>& extra) {
     target.folder = one.folder;
     std::vector<std::string> arguments = arguments_for(prefs_, target);
     arguments.insert(arguments.end(), extra.begin(), extra.end());
-    one.game.start(one.program(), arguments, one.folder, one.play_error, one.folder / "logs" / "game.log");
+    one.stopped_log.clear();
+    one.stopped_reason.clear();
+    // (seen as running from here: a game that stops before the next frame still has its end noticed, and its log kept)
+    one.was_running = one.game.start(one.program(), arguments, one.folder, one.play_error, one.folder / "logs" / "game.log");
 }
 
 bool App::toggle_on(const Slot& one, const launcher::Toggle& toggle) const {

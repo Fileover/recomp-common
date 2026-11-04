@@ -135,6 +135,7 @@ private:
     // The games with a page as the places of the sidebar's list, in the player's order: a game, or a series' games
     // (two or more of them with a page: launcher::CollectionGame::series), which move together
     std::vector<std::vector<size_t>> units() const;
+    bool grouped(const std::vector<size_t>& unit) const;
     // A row of the sidebar after the collection's own pages: a game's, or a series' (its games', shown under it
     // while it is open). A series' row is its page: its games, each to play or go to.
     struct Row {

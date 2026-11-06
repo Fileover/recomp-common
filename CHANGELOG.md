@@ -5,6 +5,11 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- **The menu's arrows repeat while held** (`MenuRepeat`, C `rmenu_repeat`): a host gives it what is down each frame and
+  gets the presses, Up, Down, Left and Right again after a moment's hold, and faster after a second.
+- **Favourites in the menu** (`MenuFeature::favourites`, `MenuConfig::favourite` and `setFavourite`): a long choice
+  (stages, say) whose Confirm marks the one shown a favourite, with a row under it that goes through the favourites
+  alone. The host keeps them.
 - **An Online page for a launcher of one game** (`Description::online_page`): hosting, joining, the lobby and the
   waiting room on a page of their own after Game, as a collection's Online page has them, rather than a card on the
   Game page. **The port's own pages after Game** (`Description::own_pages_after_game`): Game, Online, then the

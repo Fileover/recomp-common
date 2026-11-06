@@ -14,8 +14,32 @@ using namespace text;
 
 namespace {
     // (after MenuRow's kinds, which the first page's rows keep)
-    enum { kRowSave, kRowLoad, kRowSlot, kRowSpeed, kRowAction, kRowQuit, kRowResume, kRowCommand, kRowPage, kRowFeature, kRowBack, kRowMute };
+    enum { kRowSave, kRowLoad, kRowSlot, kRowSpeed, kRowAction, kRowQuit, kRowResume, kRowCommand, kRowPage, kRowFeature, kRowBack, kRowMute, kRowFavourites };
+    constexpr unsigned kArrows = kMenuUp | kMenuDown | kMenuLeft | kMenuRight;
 } // namespace
+
+unsigned MenuRepeat::Step(unsigned held) {
+    unsigned pressed = held & ~m_held;
+    // (the arrows held, and nothing else gone down: on with the count; otherwise from the start)
+    const unsigned arrows = held & kArrows;
+    if (arrows && arrows == (m_held & kArrows) && !pressed) {
+        m_frames++;
+        const bool faster = m_frames >= kFasterAfter;
+        const int after = faster ? kFasterAfter : kRepeatAfter, every = faster ? kFasterEvery : kRepeatEvery;
+        if (m_frames >= kRepeatAfter && (m_frames - after) % every == 0) {
+            pressed |= arrows;
+        }
+    } else {
+        m_frames = 0;
+    }
+    m_held = held;
+    return pressed;
+}
+
+bool Menu::Favourites(size_t feature) const {
+    return m_config.features[feature].favourites && !m_config.features[feature].choices.empty() && m_config.favourite &&
+           m_config.setFavourite;
+}
 
 void Menu::Configure(MenuConfig config) {
     m_config = std::move(config);
@@ -188,6 +212,9 @@ void Menu::Fill() {
         for (size_t i = 0; i < m_config.features.size(); i++) {
             if (m_page == m_config.features[i].category) {
                 m_rows.push_back({kRowFeature, i, ""});
+                if (Favourites(i)) {
+                    m_rows.push_back({kRowFavourites, i, ""});
+                }
             }
         }
         m_rows.push_back({kRowBack, 0, ""});
@@ -236,6 +263,26 @@ Menu::Chosen Menu::Buttons(unsigned pressed) {
     if (row.kind == kRowSpeed && step) {
         const int speeds = static_cast<int>(m_config.speeds.size());
         m_speed = press ? (m_speed + 1) % speeds : std::clamp(m_speed + step, 0, speeds - 1);
+        return {};
+    }
+    if (row.kind == kRowFeature && press && Favourites(row.index)) {
+        // (Confirm on a favourites feature: the choice shown marked a favourite, or no longer; a list of stages may have
+        // no choice that means off, its first a stage too)
+        const int value = m_config.value ? m_config.value(row.index) : 0;
+        m_config.setFavourite(row.index, value, !m_config.favourite(row.index, value));
+        return {};
+    }
+    if (row.kind == kRowFavourites && step) {
+        // (the next favourite that way, around, from the choice shown; none marked: as it is)
+        const int choices = static_cast<int>(m_config.features[row.index].choices.size());
+        const int value = m_config.value ? m_config.value(row.index) : 0;
+        for (int n = 1; n < choices && m_config.setValue; n++) {
+            const int at = ((value + step * n) % choices + choices) % choices;
+            if (m_config.favourite(row.index, at)) {
+                m_config.setValue(row.index, at);
+                break;
+            }
+        }
         return {};
     }
     if (row.kind == kRowFeature && step && (press || !m_config.features[row.index].choices.empty())) {
@@ -382,6 +429,34 @@ void Menu::Draw(uint32_t *pixels, int width, int height) const {
                 value = feature.choices[static_cast<size_t>(std::clamp(chosen, 0, static_cast<int>(feature.choices.size()) - 1))];
             }
             valueColor = chosen ? on : dim;
+            if (Favourites(row.index)) {
+                if (m_config.favourite(row.index, chosen)) {
+                    value += "  *";
+                }
+                rowDescription += " (" + m_config.confirmName + ": the one shown a favourite, or not.)";
+            }
+            break;
+        }
+        case kRowFavourites: {
+            const MenuFeature &feature = m_config.features[row.index];
+            const int chosen = m_config.value ? m_config.value(row.index) : 0;
+            title = "Favourites"; // (of the row above's)
+            int count = 0;
+            for (int c = 0; c < static_cast<int>(feature.choices.size()); c++) {
+                count += m_config.favourite(row.index, c) ? 1 : 0;
+            }
+            if (!count) {
+                value = "none yet";
+                valueColor = dim;
+            } else if (chosen >= 0 && chosen < static_cast<int>(feature.choices.size()) && m_config.favourite(row.index, chosen)) {
+                value = feature.choices[static_cast<size_t>(chosen)];
+                valueColor = on;
+            } else {
+                value = std::to_string(count) + " >";
+                valueColor = dim;
+            }
+            rowDescription = "Left/Right: through your favourites of " + feature.title + " alone. " + m_config.confirmName +
+                             " on the row above marks the one shown a favourite, or not.";
             break;
         }
         default: break;

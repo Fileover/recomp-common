@@ -104,6 +104,16 @@ struct InfoRow {
     const char *text;
 };
 
+// Something the player should do before playing and might not know of (a file of the port's that an earlier release
+// built, to build again, say): a card at the top of the Game page, in the accent, as an invitation's is
+struct Notice {
+    std::string heading; // over the card, in capitals ("REBUILD NEEDED")
+    std::string title;   // "" for none: no card
+    std::string detail;
+    std::string button;  // a button that opens the port's own page named `page`; "" for none
+    std::string page;
+};
+
 // What a page of the port's own is drawn with (ui.h and layout.h are the launcher's look)
 struct PageContext {
     float width;                                 // of the page's column
@@ -143,6 +153,8 @@ struct Description {
     bool online_page = false;
     // The port's own pages after Game (and Online), before Features, rather than first
     bool own_pages_after_game = false;
+    // Optional: the Game page's notice (Notice above), asked each time the page is drawn, with the player's folder
+    std::function<Notice(const std::filesystem::path &folder)> notice;
     // false: no Game page (and no game file, check or Display card): the port's pages have Play
     bool game_page = true;
 

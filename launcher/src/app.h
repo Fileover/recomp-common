@@ -215,6 +215,7 @@ private:
     Page own_page(int index, size_t* which = nullptr) const;
     launcher::PageContext context(float width);
     void game_page(float width);
+    void notice_card(float width);
     void library_page(float width);
     void title_page(size_t which, float width);
     void series_page(size_t which, float width);  // a series' page (`which`: one of its games)

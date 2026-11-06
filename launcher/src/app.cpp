@@ -3045,6 +3045,7 @@ void App::game_page(float width) {
     layout::heading(LAUNCHER_GAME_NAME, about_.file_intro, width);
     bool ready = play_button(0, width);
     ui::gap(28);
+    notice_card(width);
 #ifdef LAUNCHER_UPDATE_REPO
     update_card(width, true, true);  // (at the top, new version or not, as a collection's Games page has it)
     ui::gap(28);
@@ -3053,6 +3054,35 @@ void App::game_page(float width) {
     display_cards(0, width);
     play_cards(0, width, ready);
     files_card(width);
+}
+
+// The port's notice (Description::notice), highlighted as an invitation is, its button opening the port's page
+void App::notice_card(float width) {
+    if (!about_.notice) {
+        return;
+    }
+    const launcher::Notice notice = about_.notice(slot().folder);
+    if (notice.title.empty()) {
+        return;
+    }
+    int place = -1;
+    const std::vector<int> layout = single_layout();
+    for (size_t i = 0; i < layout.size(); i++) {
+        if (layout[i] >= 0 && about_.pages[static_cast<size_t>(layout[i])].name == notice.page) {
+            place = static_cast<int>(i);
+        }
+    }
+    ui::text(notice.heading.c_str(), Font::Semibold, ui::size::kDetail, ui::palette().accent);
+    ui::gap(10);
+    Card card(width, true);
+    const bool button = !notice.button.empty() && place >= 0;
+    row(width, notice.title.c_str(), notice.detail.c_str(), button ? 150.0f : 0.0f, 36.0f, [&] {
+        if (button && ui::button((notice.button + "##notice").c_str(), Kind::Primary, 150.0f)) {
+            page_ = place;
+        }
+    });
+    card.end();
+    ui::gap(28);
 }
 
 // A launcher of one game's Online page (Description::online_page): what the Game page's Online card has, on a page

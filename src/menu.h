@@ -60,7 +60,8 @@ struct MenuFeature {
     // For a choice: the names, the first being the one that means off. Empty: on (1) or off (0).
     std::vector<std::string> choices = {};
     // A choice of many (stages, say) whose player keeps favourites (MenuConfig::favourite): Confirm on its row marks the
-    // choice shown as one, or not, and a row under it goes through the favourites alone
+    // choice shown as one, or not (any of them: a list of stages may have none that means off), and a row under it goes
+    // through the favourites alone
     bool favourites = false;
 };
 

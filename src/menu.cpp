@@ -266,11 +266,10 @@ Menu::Chosen Menu::Buttons(unsigned pressed) {
         return {};
     }
     if (row.kind == kRowFeature && press && Favourites(row.index)) {
-        // (Confirm on a favourites feature: the choice shown marked a favourite, or no longer; off is never one)
+        // (Confirm on a favourites feature: the choice shown marked a favourite, or no longer; a list of stages may have
+        // no choice that means off, its first a stage too)
         const int value = m_config.value ? m_config.value(row.index) : 0;
-        if (value > 0) {
-            m_config.setFavourite(row.index, value, !m_config.favourite(row.index, value));
-        }
+        m_config.setFavourite(row.index, value, !m_config.favourite(row.index, value));
         return {};
     }
     if (row.kind == kRowFavourites && step) {
@@ -279,7 +278,7 @@ Menu::Chosen Menu::Buttons(unsigned pressed) {
         const int value = m_config.value ? m_config.value(row.index) : 0;
         for (int n = 1; n < choices && m_config.setValue; n++) {
             const int at = ((value + step * n) % choices + choices) % choices;
-            if (at > 0 && m_config.favourite(row.index, at)) {
+            if (m_config.favourite(row.index, at)) {
                 m_config.setValue(row.index, at);
                 break;
             }
@@ -431,7 +430,7 @@ void Menu::Draw(uint32_t *pixels, int width, int height) const {
             }
             valueColor = chosen ? on : dim;
             if (Favourites(row.index)) {
-                if (chosen > 0 && m_config.favourite(row.index, chosen)) {
+                if (m_config.favourite(row.index, chosen)) {
                     value += "  *";
                 }
                 rowDescription += " (" + m_config.confirmName + ": the one shown a favourite, or not.)";
@@ -443,13 +442,13 @@ void Menu::Draw(uint32_t *pixels, int width, int height) const {
             const int chosen = m_config.value ? m_config.value(row.index) : 0;
             title = feature.title + ": favourites";
             int count = 0;
-            for (int c = 1; c < static_cast<int>(feature.choices.size()); c++) {
+            for (int c = 0; c < static_cast<int>(feature.choices.size()); c++) {
                 count += m_config.favourite(row.index, c) ? 1 : 0;
             }
             if (!count) {
                 value = "none yet";
                 valueColor = dim;
-            } else if (chosen > 0 && chosen < static_cast<int>(feature.choices.size()) && m_config.favourite(row.index, chosen)) {
+            } else if (chosen >= 0 && chosen < static_cast<int>(feature.choices.size()) && m_config.favourite(row.index, chosen)) {
                 value = feature.choices[static_cast<size_t>(chosen)];
                 valueColor = on;
             } else {

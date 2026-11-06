@@ -296,7 +296,7 @@ int main() {
     }
 
     {
-        // A favourites feature: a row under it; Confirm marks the stage shown (never Off); the favourites row goes
+        // A favourites feature: a row under it; Confirm marks the stage shown, or not; the favourites row goes
         // through the marked alone, around; without the host's favourites it is any other feature
         std::map<int, bool> marked;
         MenuConfig c;
@@ -310,7 +310,7 @@ int main() {
         menu.Configure(c);
         menu.Open();
         Press(menu, {kMenuConfirm}); // (into Training: Stage, Stage: favourites, Back)
-        Press(menu, {kMenuConfirm}); // (Random: not marked)
+        Press(menu, {kMenuConfirm, kMenuConfirm}); // (the first, marked and not again)
         CHECK(!marked[0]);
         Press(menu, {kMenuRight, kMenuRight, kMenuConfirm}); // (Ken's)
         CHECK(marked[2]);

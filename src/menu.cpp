@@ -440,7 +440,7 @@ void Menu::Draw(uint32_t *pixels, int width, int height) const {
         case kRowFavourites: {
             const MenuFeature &feature = m_config.features[row.index];
             const int chosen = m_config.value ? m_config.value(row.index) : 0;
-            title = feature.title + ": favourites";
+            title = "Favourites"; // (of the row above's)
             int count = 0;
             for (int c = 0; c < static_cast<int>(feature.choices.size()); c++) {
                 count += m_config.favourite(row.index, c) ? 1 : 0;
@@ -455,7 +455,8 @@ void Menu::Draw(uint32_t *pixels, int width, int height) const {
                 value = std::to_string(count) + " >";
                 valueColor = dim;
             }
-            rowDescription = "Left/Right: through your favourites alone. " + m_config.confirmName + " on the row above marks the one shown a favourite, or not.";
+            rowDescription = "Left/Right: through your favourites of " + feature.title + " alone. " + m_config.confirmName +
+                             " on the row above marks the one shown a favourite, or not.";
             break;
         }
         default: break;

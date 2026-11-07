@@ -427,6 +427,9 @@ static std::string stopped_meaning(int code, const std::string& reason) {
 #ifdef _WIN32
         return "Your graphics driver has no Direct3D 12 or Vulkan support, which the game needs to draw. Update your "
                "graphics card's driver from NVIDIA, AMD or Intel; a card too old for either can't run it.";
+#elif defined(__APPLE__)
+        return "This Mac's graphics have no Metal support, which the game needs to draw. It needs macOS on a Mac "
+               "with Metal graphics.";
 #else
         return "Your graphics driver has no Vulkan support, which the game needs to draw. Install or update your "
                "system's Vulkan driver (Mesa's, or your graphics card maker's).";

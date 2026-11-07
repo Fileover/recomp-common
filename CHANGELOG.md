@@ -5,6 +5,16 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- **The menu and the launcher in the player's language** (`i18n.h`): English, Brazilian Portuguese (`pt-BR`) and Spanish
+  (`es`). Every word is written in English where it is used and looked up where it is drawn (`Tr`, and `TrFormat` for a
+  text with `{}` in it), so a port's own rows, features and launcher pages are translated by the tables it adds
+  (`i18n::Add`); a text no table has stays in English. The launcher's Game page (a collection's Games page) has a
+  **Language** choice (the system's, or one of them), kept in launcher.ini's `[launcher] language` and handed to the
+  games it starts in `RECOMP_LANGUAGE`; a game started on its own takes that or the system's (`i18n::Resolve`,
+  `FromEnvironment`). `RECOMP_I18N_MISSING=FILE` lists the texts drawn that the language's tables do not have.
+- **The menu's font is UTF-8 and has Latin-1's accented letters** (á, ã, ç, é, ñ, ü..., ¿ ¡ º ª), drawn as their letter
+  and a mark (over a capital, two rows above its cell; `text.h`).
+
 - **The menu's arrows repeat while held** (`MenuRepeat`, C `rmenu_repeat`): a host gives it what is down each frame and
   gets the presses, Up, Down, Left and Right again after a moment's hold, and faster after a second.
 - **Favourites in the menu** (`MenuFeature::favourites`, `MenuConfig::favourite` and `setFavourite`): a long choice

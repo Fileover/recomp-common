@@ -5,6 +5,8 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- **No console window beside the launcher on Windows** (from Fileover, cps2recomp #208): it is built as a windowed
+  program, as the games are; started from a terminal, it attaches to that terminal's console for its output.
 - **The menu and the launcher in the player's language** (`i18n.h`): English, Brazilian Portuguese (`pt-BR`) and Spanish
   (`es`). Every word is written in English where it is used and looked up where it is drawn (`Tr`, and `TrFormat` for a
   text with `{}` in it), so a port's own rows, features and launcher pages are translated by the tables it adds

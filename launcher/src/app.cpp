@@ -26,6 +26,7 @@
 
 #include "folders.h"
 #include "gamepads.h"
+#include "i18n.h"
 #include "layout.h"
 #include "online.h"
 #include "steam.h"
@@ -269,10 +270,13 @@ std::string lower(std::string text) {
 
 }  // namespace
 
+using recomp::Tr;
+using recomp::i18n::TrFormat;
+
 // (--play is often typed: what goes wrong is said on the terminal too)
 static void say(SDL_MessageBoxFlags kind, const std::string& title, const std::string& message) {
     std::fprintf(stderr, "%s: %s\n", title.c_str(), message.c_str());
-    SDL_ShowSimpleMessageBox(kind, title.c_str(), message.c_str(), nullptr);
+    SDL_ShowSimpleMessageBox(kind, title.c_str(), Tr(message).c_str(), nullptr);
 }
 
 bool prepare_folders(bool ask) {
@@ -417,7 +421,8 @@ StoppedLog keep_stopped_log(const std::filesystem::path& folder) {
 
 // "<name> stopped with code N (reason)"
 static std::string stopped_text(const std::string& name, int code, const std::string& reason) {
-    return name + " stopped with code " + std::to_string(code) + (reason.empty() ? std::string() : " (" + reason + ")");
+    return reason.empty() ? TrFormat("{} stopped with code {}", {name, std::to_string(code)})
+                          : TrFormat("{} stopped with code {} ({})", {name, std::to_string(code), reason});
 }
 
 // What a code means, for a player: a crash (a signal, or a Windows exception), or the runtime stopping on
@@ -448,8 +453,9 @@ static std::string stopped_meaning(int code, const std::string& reason) {
                 break;
             }
         }
-        return "The game met something in " + area + " that this version can't handle yet, so it closed itself "
-               "rather than go on wrong. It's a bug in the port, not in your copy of the game.";
+        return TrFormat("The game met something in {} that this version can't handle yet, so it closed itself rather than go on wrong. "
+                        "It's a bug in the port, not in your copy of the game.",
+                        {Tr(area)});
     }
     if (code < 0 && code > -64) {
         const int signal = -code;
@@ -459,7 +465,7 @@ static std::string stopped_meaning(int code, const std::string& reason) {
                            : signal == 4             ? " (an instruction it couldn't run)"
                            : signal == 8             ? " (a bad calculation)"
                                                      : "";
-        return std::string("The game crashed") + what + ". It's a bug in the port, not in your copy of the game.";
+        return TrFormat("The game crashed{}. It's a bug in the port, not in your copy of the game.", {Tr(what)});
     }
     const unsigned int windows = static_cast<unsigned int>(code);
     if (windows >= 0xC0000000u) {
@@ -493,6 +499,40 @@ static std::string issue_url(const std::string& title) {
 }
 #endif
 
+// The language of the launcher and of the games it starts (i18n.h): launcher.ini's [launcher] language, or ("") the
+// system's. The games are told in RECOMP_LANGUAGE.
+void use_language(const recomp::Ini& prefs) {
+    // (RECOMP_LANGUAGE the launcher was started with goes before the system's: a test's, say)
+    static const std::string given = std::getenv("RECOMP_LANGUAGE") ? std::getenv("RECOMP_LANGUAGE") : "";
+    std::vector<std::string> preferred;
+    if (!given.empty()) {
+        preferred.push_back(given);
+    }
+    int count = 0;
+    if (SDL_Locale** locales = SDL_GetPreferredLocales(&count)) {
+        for (int i = 0; i < count; i++) {
+            std::string code = locales[i]->language ? locales[i]->language : "";
+            if (locales[i]->country) {
+                code += std::string("-") + locales[i]->country;
+            }
+            preferred.push_back(code);
+        }
+        SDL_free(locales);
+    }
+    for (const char* name : {"LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"}) {
+        if (const char* value = std::getenv(name); value && *value) {
+            preferred.push_back(value);
+        }
+    }
+    const std::string language = recomp::i18n::Resolve(prefs.get("launcher", "language"), preferred);
+    recomp::i18n::SetLanguage(language);
+#ifdef _WIN32
+    _putenv_s("RECOMP_LANGUAGE", language.c_str());
+#else
+    setenv("RECOMP_LANGUAGE", language.c_str(), 1);
+#endif
+}
+
 int play_directly(const std::string& id, const std::vector<std::string>& extra) {
     // Straight into the game with the file chosen earlier (e.g. a Steam shortcut in Game Mode).
     std::vector<Target> all = targets();
@@ -513,6 +553,7 @@ int play_directly(const std::string& id, const std::vector<std::string>& extra) 
     const launcher::Description& about = *target->about;
     recomp::Ini prefs(player_folder(LAUNCHER_GAME_NAME, LAUNCHER_HOME_ENV) / "launcher.ini");
     prefs.load();
+    use_language(prefs);
     if (about.game_page && !about.check(prefs.get(target->file_section, about.file_key)).usable()) {
         say(SDL_MESSAGEBOX_INFORMATION, target->name, about.file_not_set_up);
         return 1;
@@ -601,6 +642,7 @@ App::App(SDL_Window* window)
       program_folder_(base_path()),
       about_(the_description()) {
     prefs_.load();
+    use_language(prefs_);
     // (controllers SDL doesn't know: gamecontrollerdb.txt beside the launcher or in its folder, as the game reads it)
     recomp::AddGamepadMappings({program_folder_, folder_});
     for (const Target& target : targets()) {
@@ -1543,13 +1585,13 @@ void App::frame() {
             here += one->has_program();
         }
         if (found.empty()) {
-            find_message_ = "None of the games was found there.";
+            find_message_ = Tr("None of the games was found there.");
         } else {
             std::string names;
             for (size_t i = 0; i < found.size(); i++) {
-                names += (i == 0 ? "" : i + 1 == found.size() ? " and " : ", ") + slots_[found[i].first]->name;
+                names += (i == 0 ? "" : i + 1 == found.size() ? Tr(" and ") : ", ") + slots_[found[i].first]->name;
             }
-            find_message_ = "Found " + names + " (" + std::to_string(found.size()) + " of " + std::to_string(here) + ").";
+            find_message_ = TrFormat("Found {} ({} of {}).", {names, std::to_string(found.size()), std::to_string(here)});
         }
     }
     // A game that ended may have changed its settings.ini (its menu's features): what it left is what is shown
@@ -1694,7 +1736,7 @@ void App::sidebar(float height) {
     // (the version, under the name: the one online play's matches must have too)
     ui::gap(4);
     ImGui::SetCursorScreenPos(ImVec2(origin.x + px(24), ImGui::GetCursorScreenPos().y));
-    ui::text("Version " LAUNCHER_VERSION, Font::Regular, ui::size::kSmall, p.tertiary);
+    ui::text(TrFormat("Version {}", {LAUNCHER_VERSION}).c_str(), Font::Regular, ui::size::kSmall, p.tertiary);
 #endif
     const char* own[] = {"Game", about_.features_name, "Controllers", "Games", "", "Multi game", "Online", "", ""};
     float fixed = static_cast<float>(fixed_pages());
@@ -2131,9 +2173,9 @@ bool App::play_button(size_t which, float width) {
     bool ready = file_ok && have_program && !one.game.running() && (collection_ || !any_running());
     if (one.about->preset_summary) {
         std::string preset = recomp::Preset(one.settings);
-        std::string summary = preset == "pure"       ? std::string("Features: Pure (exactly as ") + one.about->original + ")"
-                              : preset == "enhanced" ? "Features: Enhanced"
-                                                     : "Features: Custom";
+        std::string summary = preset == "pure"       ? TrFormat("Features: Pure (exactly as {})", {Tr(one.about->original)})
+                              : preset == "enhanced" ? Tr("Features: Enhanced")
+                                                     : Tr("Features: Custom");
         ui::text(summary.c_str(), Font::Regular, ui::size::kDetail, p.secondary);
         ui::gap(12);
     }
@@ -2171,7 +2213,7 @@ void App::keep_stopped_log(Slot& one) {
 void App::stopped_note(Slot& one, float width) {
     const ui::Palette& p = ui::palette();
     ui::gap(10);
-    std::string text = stopped_text(collection_ ? one.name : std::string("The game"), one.game.exit_code(), one.stopped_reason) + ".";
+    std::string text = stopped_text(collection_ ? one.name : Tr("The game"), one.game.exit_code(), one.stopped_reason) + ".";
     ui::text(text.c_str(), Font::Regular, ui::size::kDetail, p.danger, width);
     if (std::string meaning = stopped_meaning(one.game.exit_code(), one.stopped_reason); !meaning.empty()) {
         ui::gap(6);
@@ -2182,13 +2224,14 @@ void App::stopped_note(Slot& one, float width) {
     }
     ui::gap(6);
 #ifdef LAUNCHER_ISSUES_REPO
-    std::string help = "To report it, open an issue on GitHub (Report below), say what you were doing, and attach this "
-                       "run's log: " + one.stopped_log.u8string();
+    std::string help = TrFormat("To report it, open an issue on GitHub (Report below), say what you were doing, and attach this "
+                                "run's log: {}",
+                                {one.stopped_log.u8string()});
 #else
-    std::string help = "To report it, say what you were doing and send this run's log: " + one.stopped_log.u8string();
+    std::string help = TrFormat("To report it, say what you were doing and send this run's log: {}", {one.stopped_log.u8string()});
 #endif
 #ifdef __ANDROID__
-    help += " (a computer sees it over USB, in Android/data)";
+    help += Tr(" (a computer sees it over USB, in Android/data)");
 #endif
     ui::text(help.c_str(), Font::Regular, ui::size::kDetail, p.secondary, width);
     ImGui::PushID(one.id.c_str());
@@ -2235,8 +2278,10 @@ void App::play_cards(size_t which, float width, bool ready) {
         ui::gap(10);
         Card card(width);
         std::string detail = !steam_message_.empty() ? steam_message_
-                             : collection_ ? "Adds \"" + one.name + "\" (straight into the game) and \"" LAUNCHER_GAME_NAME "\" to your Steam library, to play from Game Mode."
-                                           : "Adds \"" LAUNCHER_GAME_NAME "\" (straight into the game) and \"" LAUNCHER_GAME_NAME " Launcher\" to your Steam library, to play from Game Mode.";
+                             : collection_ ? TrFormat("Adds \"{}\" (straight into the game) and \"{}\" to your Steam library, to play from Game Mode.",
+                                                      {one.name, LAUNCHER_GAME_NAME})
+                                           : TrFormat("Adds \"{}\" (straight into the game) and \"{} Launcher\" to your Steam library, to play from Game Mode.",
+                                                      {LAUNCHER_GAME_NAME, LAUNCHER_GAME_NAME});
         row(width, "Play from Steam", detail.c_str(), 150.0f, 36.0f, [&] {
             if (ui::button("Add to Steam", Kind::Secondary, 150.0f, ready)) {
                 if (collection_) {
@@ -2274,11 +2319,12 @@ void App::online_card(size_t which, float width, bool ready) {
     for (const std::string& address : online_here_) {
         here += (here.empty() ? "" : ", ") + address;
     }
-    std::string port = online.port ? " (UDP port " + std::to_string(online.port) + ")" : "";
-    std::string detail = online.codes ? "Waits for the other player. The game shows a code to give them; on this network they can also join at " +
-                                            (here.empty() ? std::string("this machine's address") : here) + port + "."
-                                      : "Waits for the other player, who joins this machine at " + (here.empty() ? std::string("its address") : here) + port +
-                                            ". Over the internet: this network's public address, with that port forwarded to this machine.";
+    std::string port = online.port ? TrFormat(" (UDP port {})", {std::to_string(online.port)}) : "";
+    std::string detail = online.codes ? TrFormat("Waits for the other player. The game shows a code to give them; on this network they can also join at {}.",
+                                                 {(here.empty() ? Tr("this machine's address") : here) + port})
+                                      : TrFormat("Waits for the other player, who joins this machine at {}. Over the internet: this network's public "
+                                                 "address, with that port forwarded to this machine.",
+                                                 {(here.empty() ? Tr("its address") : here) + port});
     const bool lobby = online.lobby && online.list_argument;
     row(width, "Host a match", detail.c_str(), 130.0f, 36.0f, [&] {
         if (ui::button("Host", Kind::Secondary, 130.0f, ready)) {
@@ -2498,7 +2544,7 @@ void App::online_page(float width) {
         ui::text("NEW VERSION", Font::Semibold, ui::size::kDetail, p.accent);
         ui::gap(10);
         Card news(width, true);
-        const std::string title = "Version " + status.version + " is out";
+        const std::string title = TrFormat("Version {} is out", {status.version});
         row(width, title.c_str(), "Both players of a match need the same version. Update to play the players who have the new one.", 130.0f,
             36.0f, [&] {
                 if (ui::button("Update…", Kind::Primary, 130.0f)) {
@@ -2537,7 +2583,7 @@ void App::online_page(float width) {
     int n = 0;
     const auto waited = [](const launcher::OpenMatch& match) {
         const int minutes = match.waiting / 60;
-        return minutes < 1 ? std::string("waiting for a player") : "waiting " + std::to_string(minutes) + " min";
+        return minutes < 1 ? Tr("waiting for a player") : TrFormat("waiting {} min", {std::to_string(minutes)});
     };
     for (size_t which : order_) {
         const Slot& one = *slots_[which];
@@ -2559,10 +2605,10 @@ void App::online_page(float width) {
             const bool ready = can_play(which);
             // (a match on another version can't be joined: both need the same)
             const bool other = !version_matches(match.version);
-            std::string detail = one.name + ": " + waited(match) + (match.version.empty() ? "" : ". Version " + match.version) +
-                                 (other ? " (you have " + std::string(own_version()) + "): both need the same version to play."
+            std::string detail = one.name + ": " + waited(match) + (match.version.empty() ? "" : TrFormat(". Version {}", {match.version})) +
+                                 (other ? TrFormat(" (you have {}): both need the same version to play.", {own_version()})
                                   : file ? ""
-                                         : ". Add your " + one.name + " " + collection_->file_name + " to join.");
+                                         : TrFormat(". Add your {} {} to join.", {one.name, Tr(collection_->file_name)}));
             ImGui::PushID(n++);
             row(
                 width, match.name.c_str(), detail.c_str(), 130.0f, 36.0f,
@@ -2595,11 +2641,11 @@ void App::online_page(float width) {
         }
         first = false;
         // (a game a newer version has: its name as its host's game gave it; the Games page has the updates)
-        std::string detail = (match.title.empty() ? match.game : match.title) + ": " + waited(match) + ". Not in your version of " LAUNCHER_GAME_NAME
+        std::string detail = (match.title.empty() ? match.game : match.title) + ": " + waited(match) +
 #ifdef LAUNCHER_UPDATE_REPO
-                             ": update to play it.";
+                             TrFormat(". Not in your version of {}: update to play it.", {LAUNCHER_GAME_NAME});
 #else
-                             ".";
+                             TrFormat(". Not in your version of {}.", {LAUNCHER_GAME_NAME});
 #endif
         ImGui::PushID(n++);
         row(
@@ -2628,14 +2674,14 @@ void App::online_page(float width) {
                 }
             }
             if (found.status == 200 && !version_matches(found.version)) {
-                join_said_ = "That match is on version " + found.version + ", and you have " + own_version() + ": both need the same version.";
+                join_said_ = TrFormat("That match is on version {}, and you have {}: both need the same version.", {found.version, own_version()});
             } else if (found.status == 200 && which < slots_.size() && can_play(which)) {
                 play(which, join_arguments(slots_[which]->about->online, join_code_));
             } else if (found.status == 200 && which < slots_.size()) {
-                join_said_ = "That's a " + slots_[which]->name + " match: add your " + collection_->file_name + " to join it.";
+                join_said_ = TrFormat("That's a {} match: add your {} to join it.", {slots_[which]->name, Tr(collection_->file_name)});
                 join_needs_ = static_cast<int>(which);
             } else if (found.status == 200) {
-                join_said_ = "That's a " + found.title + " match, which your version of " LAUNCHER_GAME_NAME " hasn't: update to play it.";
+                join_said_ = TrFormat("That's a {} match, which your version of {} hasn't: update to play it.", {found.title, LAUNCHER_GAME_NAME});
             } else if (found.status == 404) {
                 join_said_ = "There's no match with that code. Codes last 30 minutes, and each is good for one match.";
             } else if (found.status != 0) {
@@ -2892,10 +2938,10 @@ void App::invitations_card(float width) {
             file = !slots_[which]->checking && slots_[which]->file.usable();
         }
         const std::string game = known ? slots_[which]->name : invitation->title;
-        const std::string title = invitation->name + " invites you to " + game;
-        const std::string detail = !known ? "Your version of " LAUNCHER_GAME_NAME " hasn't " + game + ": update to play it."
-                                   : file ? "Accept starts the game and joins their match."
-                                          : "Add your " + game + " " + (collection_ ? collection_->file_name : "game files") + " to accept.";
+        const std::string title = TrFormat("{} invites you to {}", {invitation->name, game});
+        const std::string detail = !known ? TrFormat("Your version of {} hasn't {}: update to play it.", {LAUNCHER_GAME_NAME, game})
+                                   : file ? Tr("Accept starts the game and joins their match.")
+                                          : TrFormat("Add your {} {} to accept.", {game, Tr(collection_ ? collection_->file_name : "game files")});
         ImGui::PushID(n++);
         row(width, title.c_str(), detail.c_str(), 370.0f, 36.0f, [&] {
             if (known && file) {
@@ -2977,11 +3023,11 @@ void App::room_card(float width, const std::vector<size_t>& playable) {
         if (which < slots_.size()) {
             const std::string& game = slots_[which]->name;
             detail = std::find(player.games.begin(), player.games.end(), room_game(which)) != player.games.end()
-                         ? "Has " + game + "."
-                         : "Hasn't added " + game + " yet: they can when invited.";
+                         ? TrFormat("Has {}.", {game})
+                         : TrFormat("Hasn't added {} yet: they can when invited.", {game});
         }
         if (!named) {
-            detail += (detail.empty() ? "" : " ") + std::string("Give yourself a name above to invite.");
+            detail += std::string(detail.empty() ? "" : " ") + Tr("Give yourself a name above to invite.");
         }
         const launcher::Online* online = which < slots_.size() ? &slots_[which]->about->online : nullptr;
         ImGui::PushID(static_cast<int>(n));
@@ -2998,10 +3044,11 @@ void App::room_card(float width, const std::vector<size_t>& playable) {
     }
     inset_separator(width);
     row(width, "Let others invite me",
-        (named ? std::string("While your ") + (collection_ ? "Online" : "Game") + " page is open, you're in the waiting room under "
-                 "your name, and others can invite you to a match. An invitation never interrupts a game: it waits here."
-               : std::string("With a name, you're in the waiting room while your ") + (collection_ ? "Online" : "Game") +
-                 " page is open, and others can invite you to a match.")
+        (named ? TrFormat("While your {} page is open, you're in the waiting room under your name, and others can invite you to a match. "
+                          "An invitation never interrupts a game: it waits here.",
+                          {Tr(collection_ ? "Online" : "Game")})
+               : TrFormat("With a name, you're in the waiting room while your {} page is open, and others can invite you to a match.",
+                          {Tr(collection_ ? "Online" : "Game")}))
             .c_str(),
         42.0f, 24.0f, [&] {
             if (ui::toggle("##online_invitable", invitable)) {
@@ -3014,7 +3061,7 @@ void App::room_card(float width, const std::vector<size_t>& playable) {
     if (!blocked.empty()) {
         inset_separator(width);
         const size_t count = static_cast<size_t>(std::count(blocked.begin(), blocked.end(), ',')) + 1;
-        const std::string title = count == 1 ? "1 player blocked" : std::to_string(count) + " players blocked";
+        const std::string title = count == 1 ? Tr("1 player blocked") : TrFormat("{} players blocked", {std::to_string(count)});
         row(width, title.c_str(), "You see nothing of a player you've blocked, nor they of you.", 130.0f, 36.0f, [&] {
             if (ui::button("Unblock all", Kind::Secondary, 130.0f)) {
                 prefs_.set("online", "blocked", "");
@@ -3049,10 +3096,11 @@ void App::lobby_card(size_t which, float width, bool ready) {
             inset_separator(width);
         }
         const int minutes = match.waiting / 60;
-        std::string waited = minutes < 1 ? "Waiting for a player" : "Waiting " + std::to_string(minutes) + " min";
+        std::string waited = minutes < 1 ? Tr("Waiting for a player") : TrFormat("Waiting {} min", {std::to_string(minutes)});
         const bool other = !version_matches(match.version);
         if (!match.version.empty()) {
-            waited += ". Version " + match.version + (other ? " (you have " + std::string(own_version()) + "): both need the same version." : "");
+            waited += TrFormat(". Version {}", {match.version}) +
+                      (other ? TrFormat(" (you have {}): both need the same version.", {own_version()}) : "");
         }
         ImGui::PushID(static_cast<int>(n));
         row(
@@ -3080,7 +3128,37 @@ void App::game_page(float width) {
     file_card(0, width);
     display_cards(0, width);
     play_cards(0, width, ready);
+    language_card(width);
     files_card(width);
+}
+
+// The language of the launcher and the games' menus (i18n.h): the system's, or one chosen
+void App::language_card(float width) {
+    const ui::Palette& p = ui::palette();
+    ui::gap(36);
+    ui::text("LANGUAGE", Font::Semibold, ui::size::kDetail, p.secondary);
+    ui::gap(10);
+    Card card(width);
+    std::vector<std::string> names = {"The system's"};
+    std::vector<std::string> codes = {""};
+    for (const recomp::i18n::Language& language : recomp::i18n::kLanguages) {
+        names.push_back(language.name);
+        codes.push_back(language.code);
+    }
+    const std::string chosen = prefs_.get("launcher", "language");
+    int index = 0;
+    for (size_t i = 0; i < codes.size(); i++) {
+        index = codes[i] == chosen ? static_cast<int>(i) : index;
+    }
+    row(width, "Language", "The launcher's words and the in-game menu's, in every game. The games' own words stay as they are.", 220.0f,
+        36.0f, [&] {
+            if (ui::dropdown("##language", names, index, 220.0f)) {
+                prefs_.set("launcher", "language", codes[static_cast<size_t>(index)]);
+                prefs_.save();
+                use_language(prefs_);
+            }
+        });
+    card.end();
 }
 
 // The port's notice (Description::notice), highlighted as an invitation is, its button opening the port's page
@@ -3167,8 +3245,9 @@ void App::library_page(float width) {
         }
         std::string detail = !only ? std::string("Leave out the games you have not set up, here and on the Features and Controllers pages.")
                              : hidden == 0 ? std::string("Every game is set up.")
-                                           : std::to_string(hidden) + (hidden == 1 ? " game you have not set up is" : " games you have not set up are") +
-                                                 " left out. Choose folder… above still finds them.";
+                             : hidden == 1 ? Tr("1 game you have not set up is left out. Choose folder… above still finds them.")
+                                           : TrFormat("{} games you have not set up are left out. Choose folder… above still finds them.",
+                                                      {std::to_string(hidden)});
         row(width, "Only the games you have", detail.c_str(), 42.0f, 24.0f, [&] {
             if (ui::toggle("##installed-only", only)) {
                 prefs_.set("games", "installed_only", only ? "0" : "1");
@@ -3249,6 +3328,7 @@ void App::library_page(float width) {
             ui::text(text.c_str(), Font::Regular, ui::size::kDetail, p.danger, width);
         }
     }
+    language_card(width);
     files_card(width);
 }
 
@@ -3286,11 +3366,12 @@ void App::files_card(float width) {
 #else
     const char* beside = "beside the launcher";
 #endif
-    const std::string about = !portable.empty() ? std::string("Settings, saves, save states and the logs. Take portable.txt away from ") +
-                                                      beside + " to use your user folder again; nothing is moved."
-                                                : std::string("Settings, saves, save states and the logs. To keep them with the launcher "
-                                                              "instead, on a drive you carry, put a file named portable.txt ") +
-                                                      beside + ".";
+    const std::string about = !portable.empty() ? TrFormat("Settings, saves, save states and the logs. Take portable.txt away from {} to use "
+                                                           "your user folder again; nothing is moved.",
+                                                           {Tr(beside)})
+                                                : TrFormat("Settings, saves, save states and the logs. To keep them with the launcher instead, "
+                                                           "on a drive you carry, put a file named portable.txt {}.",
+                                                           {Tr(beside)});
     ui::text(about.c_str(), Font::Regular, ui::size::kDetail, p.secondary, width);
 #endif
 }
@@ -3314,12 +3395,12 @@ void App::update_card(float width, bool top, bool always) {
     ui::gap(10);
     Card card(width, news);
     const bool running = any_running();
-    std::string title = status.state == State::Installed ? "Version " + status.version + ", installed"
-                        : news                            ? "Version " + status.version + " is out"
-                                                          : "Version " LAUNCHER_VERSION;
-    std::string detail = status.state == State::Idle ? std::string("Not checked yet.") : status.message;
+    std::string title = status.state == State::Installed ? TrFormat("Version {}, installed", {status.version})
+                        : news                            ? TrFormat("Version {} is out", {status.version})
+                                                          : TrFormat("Version {}", {LAUNCHER_VERSION});
+    std::string detail = status.state == State::Idle ? Tr("Not checked yet.") : Tr(status.message);
     if ((status.state == State::Available || status.state == State::Downloaded) && running) {
-        detail += " Quit the games that are running first.";
+        detail += Tr(" Quit the games that are running first.");
     }
     row(width, title.c_str(), detail.c_str(), news ? 250.0f : 150.0f, 36.0f, [&] {
         switch (status.state) {
@@ -3417,9 +3498,10 @@ void App::title_page(size_t which, float width) {
         ui::text("YOUR GAMES", Font::Semibold, ui::size::kDetail, p.secondary);
         ui::gap(10);
         Card card(width);
-        std::string detail = std::to_string(place + 1) + " of " + std::to_string(list.size()) +
-                             (in_series ? " in " + one.series + ". Its row there can be dragged up or down among them too."
-                                        : std::string(" in the sidebar. Its row there can be dragged up or down too."));
+        std::string detail =
+            in_series ? TrFormat("{} of {} in {}. Its row there can be dragged up or down among them too.",
+                                 {std::to_string(place + 1), std::to_string(list.size()), one.series})
+                      : TrFormat("{} of {} in the sidebar. Its row there can be dragged up or down too.", {std::to_string(place + 1), std::to_string(list.size())});
         row(width, "Its place in the list", detail.c_str(), 230.0f, 36.0f, [&] {
             if (ui::button("Move up", Kind::Secondary, 110.0f, place > 0)) {
                 move_game(which, place - 1);
@@ -3467,8 +3549,9 @@ void App::series_page(size_t which, float width) {
         unit++;
     }
     const std::vector<size_t> games = places[unit];
-    std::string intro = std::to_string(games.size()) + " of your games are " + series +
-                        " games. Play one here, or go to its page for its ROM set, its Display switches and what only it has.";
+    std::string intro = TrFormat("{} of your games are {} games. Play one here, or go to its page for its ROM set, its Display switches and "
+                                 "what only it has.",
+                                 {std::to_string(games.size()), series});
     layout::heading(series.c_str(), intro.c_str(), width);
     layout::label("ITS GAMES");
     Card card(width);
@@ -3499,8 +3582,8 @@ void App::series_page(size_t which, float width) {
         ui::gap(36);
         layout::label("YOUR GAMES");
         Card place(width);
-        std::string detail = std::to_string(unit + 1) + " of " + std::to_string(places.size()) +
-                             " in the sidebar, its games with it. Its row there can be dragged up or down too.";
+        std::string detail = TrFormat("{} of {} in the sidebar, its games with it. Its row there can be dragged up or down too.",
+                                      {std::to_string(unit + 1), std::to_string(places.size())});
         row(width, "Its place in the list", detail.c_str(), 230.0f, 36.0f, [&] {
             if (ui::button("Move up", Kind::Secondary, 110.0f, unit > 0)) {
                 move_unit(unit, static_cast<int>(unit) - 1);
@@ -3611,7 +3694,8 @@ void App::multi_after(bool done) {
     Slot& one = *slots_[multi_.games[multi_.at]];
     if (!done) {
         int code = one.game.exit_code();
-        multi_message_ = code == 0 ? one.name + " was quit: the run is over." : one.name + " stopped with code " + std::to_string(code) + ": the run is over.";
+        multi_message_ = code == 0 ? TrFormat("{} was quit: the run is over.", {one.name})
+                                   : TrFormat("{} stopped with code {}: the run is over.", {one.name, std::to_string(code)});
         multi_.mode = -1;
         return;
     }
@@ -3637,13 +3721,15 @@ void App::multi_page(float width) {
         layout::label("NOW PLAYING");
         Card card(width);
         const Slot& one = *slots_[multi_.games[multi_.at]];
-        std::string detail = one.name + ": game " + std::to_string(multi_.at + 1) + " of " + std::to_string(multi_.games.size()) +
-                             (multi_.played > multi_.games.size() ? " (round " + std::to_string((multi_.played - 1) / multi_.games.size() + 1) + ")" : "") +
-                             ". Quit the game (its menu's Quit game, or close its window) to stop, or stop after this game.";
+        std::string detail = TrFormat("{}: game {} of {}", {one.name, std::to_string(multi_.at + 1), std::to_string(multi_.games.size())}) +
+                             (multi_.played > multi_.games.size()
+                                  ? TrFormat(" (round {})", {std::to_string((multi_.played - 1) / multi_.games.size() + 1)})
+                                  : "") +
+                             Tr(". Quit the game (its menu's Quit game, or close its window) to stop, or stop after this game.");
         row(width, m.title, detail.c_str(), 200.0f, 36.0f, [&] {
             if (ui::button("Stop after this game", Kind::Secondary, 200.0f)) {
                 multi_.mode = -1;
-                multi_message_ = "Stopped: " + one.name + " is the last.";
+                multi_message_ = TrFormat("Stopped: {} is the last.", {one.name});
             }
         });
         multi_buttons(m, width, true);
@@ -3931,15 +4017,17 @@ void App::features_page(float width) {
     const ui::Palette& p = ui::palette();
     std::string intro = about_.features_intro
                             ? std::string(about_.features_intro)
-                            : std::string("Pure plays the game exactly as it was ") + about_.original + ". Enhanced turns on the improvements; or pick your own.";
+                            : TrFormat("Pure plays the game exactly as it was {}. Enhanced turns on the improvements; or pick your own.",
+                                       {Tr(about_.original)});
     if (collection_) {
-        intro = std::string("For every game that has them. Pure plays each game exactly as it was ") + about_.original +
-                ". Enhanced turns on the improvements; or pick your own. What only one game has is on that game's page.";
+        intro = TrFormat("For every game that has them. Pure plays each game exactly as it was {}. Enhanced turns on the improvements; or "
+                         "pick your own. What only one game has is on that game's page.",
+                         {Tr(about_.original)});
     }
     layout::heading(about_.features_name, intro.c_str(), width);
 
     if (about_.presets) {
-        std::vector<std::string> labels = {std::string("Pure: as ") + about_.original, "Enhanced: recommended", "Custom"};
+        std::vector<std::string> labels = {TrFormat("Pure: as {}", {Tr(about_.original)}), "Enhanced: recommended", "Custom"};
         // (a collection's: the one every game has, or Custom where they differ)
         std::string preset;
         for (const auto& one : slots_) {
@@ -4011,14 +4099,14 @@ void App::features_page(float width) {
         bool differ = std::any_of(where.begin(), where.end(), [&](const auto& at) { return values[at.first][at.second] != value; });
         std::string note;
         if (where.size() < here) {
-            note = "Only in ";
+            std::string names;
             for (size_t k = 0; k < where.size(); k++) {
-                note += (k == 0 ? "" : k + 1 == where.size() ? " and " : ", ") + slots_[where[k].first]->name;
+                names += (k == 0 ? "" : k + 1 == where.size() ? Tr(" and ") : ", ") + slots_[where[k].first]->name;
             }
-            note += ".";
+            note = TrFormat("Only in {}.", {names});
         }
         if (differ) {
-            note += std::string(note.empty() ? "" : " ") + "Not the same in every game yet: what you choose here is.";
+            note += std::string(note.empty() ? "" : " ") + Tr("Not the same in every game yet: what you choose here is.");
         }
         rows.push_back({&shared.info, value, note, i});
     }
@@ -4045,7 +4133,8 @@ void App::menu_choices(float width, const FeatureRow& feature, std::vector<bool>
     const int count = static_cast<int>(std::count(offered.begin() + 1, offered.end(), true));
     auto open = std::find(menu_choices_open_.begin(), menu_choices_open_.end(), feature.info->name);
     const bool is_open = open != menu_choices_open_.end();
-    std::string label = "In the game's menu: " + (count == all ? "all " + std::to_string(all) : std::to_string(count) + " of " + std::to_string(all));
+    std::string label = count == all ? TrFormat("In the game's menu: all {}", {std::to_string(all)})
+                                     : TrFormat("In the game's menu: {} of {}", {std::to_string(count), std::to_string(all)});
     inset_separator(width);
     ImGui::PushID("menu choices");
     row(width, label.c_str(), "The ones Left and Right go through in the game's own menu, for a shorter list there. Off always is.", 120.0f,
@@ -4118,7 +4207,8 @@ void App::feature_list(float width, const std::vector<FeatureRow>& rows, const c
             matches += shown[i];
         }
         ui::gap(8);
-        std::string count = matches == 0 ? std::string("No features match.") : std::to_string(matches) + " of " + std::to_string(rows.size()) + " features";
+        std::string count = matches == 0 ? Tr("No features match.")
+                                         : TrFormat("{} of {} features", {std::to_string(matches), std::to_string(rows.size())});
         ui::text(count.c_str(), Font::Regular, ui::size::kDetail, p.secondary);
     }
     if (whole) {
@@ -4450,7 +4540,7 @@ void App::controllers_page(float width) {
             std::vector<std::string> labels = {"Every game"};
             int index = 0;
             for (size_t i = 0; i < own_able.size(); i++) {
-                labels.push_back(slots_[own_able[i]]->name + (own_layout(own_able[i]) ? "  (its own)" : ""));
+                labels.push_back(own_layout(own_able[i]) ? TrFormat("{}  (its own)", {slots_[own_able[i]]->name}) : slots_[own_able[i]]->name);
                 index = bind_slot_ == static_cast<int>(own_able[i]) ? static_cast<int>(i) + 1 : index;
             }
             row(width, "Layout for", "Every game has the same keys and buttons, unless it is given a layout of its own.", 280.0f, 36.0f, [&] {
@@ -4522,8 +4612,8 @@ void App::controllers_page(float width) {
             Card buttons(width);
             static const char* const kNth[recomp::kBindMaxPlayers] = {"first", "second", "third", "fourth"};
             const std::string whose = "Player " + std::to_string(bind_player_ + 1);
-            const std::string what = std::string("The keyboard and the ") + kNth[bind_player_] +
-                                     " gamepad. Click a button here, then press the key or the gamepad button for it.";
+            const std::string what = TrFormat("The keyboard and the {} gamepad. Click a button here, then press the key or the gamepad button for it.",
+                                              {Tr(kNth[bind_player_])});
             row(width, table.players < 2 ? "Buttons" : whose.c_str(),
                 table.players < 2 ? "The keyboard and the gamepad. Click a button here, then press the key or the gamepad button for it."
                                   : what.c_str(),

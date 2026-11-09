@@ -183,6 +183,13 @@ struct Description {
     std::function<bool(const std::string &feature, const std::string &file)> feature_shown;
     // Optional: a game file near the program (a build inside the source tree), or ""
     std::function<std::string(const std::filesystem::path &program_folder)> find_nearby;
+    // Optional: where in the folder the download was unpacked to (recomp::InstallFolder, folders.h) this game's
+    // file may be: looked for when the launcher opens and the game has no file chosen, or the one it remembers is
+    // not usable. A release's `roms` folder, say, whose zips are a game's set. Tried in turn with `check`, as
+    // `candidates` are in a folder the player chose; the first that is usable becomes the game's file, unless the
+    // player chose one meanwhile. Read only. On a thread, once for each game that has none: a port that reads the
+    // whole folder should keep what it found.
+    std::function<std::vector<std::filesystem::path>(const std::filesystem::path &install_folder)> find_beside;
     // Optional, for a collection: where in a folder the player chose this game's file may be (the names a
     // collection of such files gives it), tried in turn with `check`
     std::function<std::vector<std::filesystem::path>(const std::filesystem::path &folder)> candidates;

@@ -5,6 +5,13 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- **A folder of the games' files beside the launcher** (`Description::find_beside`, from Fileover, cps2recomp #208): a
+  release that ships its games' files beside the launcher (a `roms` folder, say) can have the launcher find them when it
+  opens. For each game that has no file chosen, or whose remembered one is not usable, the port is given the folder the
+  download was unpacked to (`recomp::InstallFolder`: the app's own on macOS, the AppImage's) and answers where the game's
+  file may be; each is put through the game's own `check`, and the first that is usable becomes the game's file, kept in
+  `launcher.ini`. One thread, one read of each file, and the folder is only read. The port's `find_nearby` is now looked
+  for once the check of a remembered file is done, so that a check on a thread no longer keeps it from running.
 - **No console window beside the launcher on Windows** (from Fileover, cps2recomp #208): it is built as a windowed
   program, as the games are; started from a terminal, it attaches to that terminal's console for its output.
 - **The menu and the launcher in the player's language** (`i18n.h`): English, Brazilian Portuguese (`pt-BR`) and Spanish

@@ -95,6 +95,7 @@ private:
         launcher::FileCheck file;        // (under mutex_ when checked on a thread)
         std::atomic<bool> checking{false};
         std::thread checker;
+        bool nearby_tried = false;       // (Description::find_nearby was asked: once, when it had no usable file)
         std::vector<int> values_before;  // its features' values when it was started (a collection's: what its menu changed)
         GameProcess game;                // its program, while it runs (a collection's games can run at once)
         bool was_running = false;
@@ -168,6 +169,11 @@ private:
     // Game file.
     void choose_game_file(size_t which);
     void use_game_file(size_t which, const std::string& path);
+    // A file the folder the download was unpacked to had for a game, its check already done: its file, unless the
+    // player chose one meanwhile, or the game's is usable (Description::find_beside)
+    void adopt_file(size_t which, const std::string& path, const launcher::FileCheck& file);
+    // That folder looked in, once, for the games that have no usable file (on a thread; frame() takes what it found)
+    void look_beside();
     void play(size_t which, const std::vector<std::string>& extra = {});
     // A collection's: every game's file looked for in a folder (on a thread), or a file or folder given to
     // whichever game takes it
@@ -343,6 +349,20 @@ private:
     std::vector<std::pair<size_t, std::string>> found_;  // (under mutex_) what it found: (game, file)
     bool found_ready_ = false;                          // (under mutex_)
     std::string find_message_;
+
+    // The folder the download was unpacked to, looked in for the games that have no file (Description::find_beside)
+    struct FoundBeside {
+        size_t which;
+        std::string path;
+        launcher::FileCheck file;  // (the game's own check's, done on that thread)
+    };
+    std::atomic<bool> beside_wanted_{false};  // (a game's description has find_beside)
+    std::atomic<bool> beside_started_{false};
+    std::atomic<bool> beside_running_{false};  // (until frame() has taken what it found)
+    std::atomic<bool> stopping_{false};        // (the launcher is closing: the look stops after the game it is on)
+    std::thread beside_;
+    std::vector<FoundBeside> beside_found_;  // (under mutex_)
+    bool beside_ready_ = false;              // (under mutex_)
 
     char feature_search_[128] = {};  // what the Features page is narrowed to ("": all of them)
     bool focus_search_ = false;      // Ctrl+F (or Cmd+F): into the search box

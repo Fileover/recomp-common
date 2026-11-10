@@ -2584,7 +2584,7 @@ void App::online_page(float width) {
             any_joinable = any_joinable || joinable(match, which);
         }
     }
-    live_label("OPEN MATCHES", width, lobby_fetch_.valid() || (room_in_ && room_lists_ && room_fetch_.valid()));
+    live_label("ONLINE MATCHES", width, lobby_fetch_.valid() || (room_in_ && room_lists_ && room_fetch_.valid()));
     Card list(width, any_joinable);
     if (lobby_.empty()) {
         const char* empty = lobby_failed_    ? "Couldn't reach the online service."
@@ -2629,7 +2629,7 @@ void App::online_page(float width) {
                 width, match.name.c_str(), detail.c_str(), 130.0f, 36.0f,
                 [&] {
                     if (other) {
-                        ui::button("Join", Kind::Secondary, 130.0f, false);
+                        ui::button(match.watching ? "Watch" : "Join", Kind::Secondary, 130.0f, false);
                     } else if (!file) {
                         if (ui::button("Add…", Kind::Secondary, 130.0f, !one.checking)) {
                             // (the system's file dialog wants a mouse or a keyboard)
@@ -3098,8 +3098,8 @@ void App::lobby_card(size_t which, float width, bool ready) {
     const launcher::Online& online = one.about->online;
     follow_lobby(online.lobby);
     ui::gap(24);
-    live_label("OPEN MATCHES", width, lobby_fetch_.valid());
-    ui::text("Matches players are hosting in the lobby now. Join one to play its host.", Font::Regular, ui::size::kDetail, p.secondary, width);
+    live_label("ONLINE MATCHES", width, lobby_fetch_.valid());
+    ui::text("Join a waiting match to play, or Watch a running match whose host allows spectators.", Font::Regular, ui::size::kDetail, p.secondary, width);
     ui::gap(10);
     Card card(width);
     if (lobby_.empty()) {

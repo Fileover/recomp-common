@@ -242,6 +242,11 @@ struct CollectionGame {
     // Its folder's name, when that is not `name` (a game given another name on the page, whose folder, with the
     // player's settings and saves in it, stays the one it had); nullptr: `name`.
     const char *folder = nullptr;
+    // When it came out, as "YYYY-MM-DD" (or "YYYY-MM", "YYYY"), for sorting the games by it; nullptr: not known (last)
+    const char *released = nullptr;
+    // The hardware it ran on, as the player reads it ("CV1000"), or nullptr. When the games name two or more, the
+    // Games page has a choice of which to list (all, or one of them), and the sidebar follows it.
+    const char *hardware = nullptr;
 };
 
 // A choice of a multi-game mode's: a row of its card on the Multi game page, kept in launcher.ini under

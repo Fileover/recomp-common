@@ -7,6 +7,7 @@
 #include "text.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace recomp {
@@ -347,11 +348,9 @@ void Menu::Draw(uint32_t *pixels, int width, int height) const {
         return;
     }
     const Canvas canvas{pixels, width, height};
-    // Sizes in font dots: d for the small text, 2d for the rows
-    const float d = static_cast<float>(std::max(height / 300, 1));
-    const float pad = 8 * d;
-    const float panelWidth = std::min(150 * kCharWidth * d / 2, width * 0.9f); // 75 small characters, if there is room
-    const float inner = panelWidth - 2 * pad;
+    // Sizes in font dots: d for the small text, 2d for the rows; as the window's height allows, and no larger than lets
+    // the widest row fit across (a tall, narrow window: a game's picture stood up). Set below, after the rows' words
+    float d = 1, pad = 0, panelWidth = 0, inner = 0;
     // A row's words: its title, its value (and the value's colour) and its description
     const auto Describe = [&](const Row &row, std::string &title, std::string &value, Color &valueColor, std::string &rowDescription) {
         title = Tr("Resume");
@@ -466,6 +465,27 @@ void Menu::Draw(uint32_t *pixels, int width, int height) const {
         default: break;
         }
     };
+    {
+        // (the widest row at a dot of 1: its title in the rows' letters, the gap, and its value in them or at least in the
+        // small letters, cut to a few characters if it must be: Draw cuts a long value so)
+        float widest = 0;
+        for (const Row &row : m_rows) {
+            std::string title, value, rowDescription;
+            Color valueColor = white;
+            Describe(row, title, value, valueColor, rowDescription);
+            float need = TextWidth(title.c_str(), 2);
+            if (!value.empty()) {
+                need += 6 + std::min(TextWidth(value.c_str(), 2), std::min(TextWidth(value.c_str(), 1), TextWidth("......", 1)));
+            }
+            widest = std::max(widest, need);
+        }
+        const float byHeight = static_cast<float>(std::max(height / 300, 1));
+        const float byWidth = std::floor(width * 0.9f / (widest + 16)); // (16: the panel's padding, 8 dots each side)
+        d = std::max(1.0f, std::min(byHeight, byWidth));
+        pad = 8 * d;
+        panelWidth = std::min(150 * kCharWidth * d / 2, width * 0.9f); // 75 small characters, if there is room
+        inner = panelWidth - 2 * pad;
+    }
     // (the hint is one line unless the picture is a narrow one)
     const std::string hint =
         i18n::TrFormat("Up/Down: choose   Left/Right or {}: change   {}: close", {Tr(m_config.confirmName), Tr(m_config.closeName)});
@@ -517,11 +537,13 @@ void Menu::Draw(uint32_t *pixels, int width, int height) const {
         Color valueColor = white;
         Describe(m_rows[i], title, value, valueColor, rowDescription);
         const float ty = y + (rowHeight - 14 * d) / 2;
-        canvas.Text(x, ty, 2 * d, 0, white, title.c_str());
+        // (a title too long for the panel even at the smallest dot, the window very narrow: in the small letters)
+        const float titleDot = TextWidth(title.c_str(), 2 * d) <= inner ? 2 * d : d;
+        canvas.Text(x, titleDot < 2 * d ? ty + 4 * d : ty, titleDot, 0, white, title.c_str());
         if (!value.empty()) {
             // (a value too long for the room beside the title: in the small letters, and cut short if even
             // those do not fit)
-            const float room = inner - TextWidth(title.c_str(), 2 * d) - 6 * d;
+            const float room = inner - TextWidth(title.c_str(), titleDot) - 6 * d;
             if (TextWidth(value.c_str(), 2 * d) <= room) {
                 canvas.Text(x + inner - TextWidth(value.c_str(), 2 * d), ty, 2 * d, 0, valueColor, value.c_str());
             } else {

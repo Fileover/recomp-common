@@ -2396,14 +2396,17 @@ std::vector<std::string> App::host_arguments(const launcher::Online& online) con
         args.push_back(online.name_argument);
         args.push_back(online_name_);
     }
+    if (online.spectators_argument && prefs_.get("online", "spectators") == "1") {
+        args.push_back(online.spectators_argument);
+    }
     if (online.arcade_argument && prefs_.get("online", "arcade") == "1") {
         args.push_back(online.arcade_argument);
     }
     return args;
 }
 
-std::vector<std::string> App::join_arguments(const launcher::Online& online, const std::string& match) const {
-    std::vector<std::string> args = {online.join_argument, match};
+std::vector<std::string> App::join_arguments(const launcher::Online& online, const std::string& match, bool watching) const {
+    std::vector<std::string> args = {watching ? online.watch_argument : online.join_argument, match};
     if (online.name_argument && online_name_[0]) {
         args.push_back(online.name_argument);
         args.push_back(online_name_);
@@ -2412,6 +2415,17 @@ std::vector<std::string> App::join_arguments(const launcher::Online& online, con
 }
 
 void App::arcade_row(float width, const launcher::Online& online) {
+    if (online.spectators_argument) {
+        inset_separator(width);
+        const bool on = prefs_.get("online", "spectators") == "1";
+        row(width, "Allow spectators", "Let viewers watch your running match from the public lobby. Viewers cannot control the players.",
+            42.0f, 24.0f, [&] {
+                if (ui::toggle("##online_spectators", on)) {
+                    prefs_.set("online", "spectators", on ? "0" : "1");
+                    prefs_.save();
+                }
+            });
+    }
     if (!online.arcade_argument) {
         return;
     }
@@ -2571,7 +2585,7 @@ void App::online_page(float width) {
             any_joinable = any_joinable || joinable(match, which);
         }
     }
-    live_label("OPEN MATCHES", width, lobby_fetch_.valid() || (room_in_ && room_lists_ && room_fetch_.valid()));
+    live_label("ONLINE MATCHES", width, lobby_fetch_.valid() || (room_in_ && room_lists_ && room_fetch_.valid()));
     Card list(width, any_joinable);
     if (lobby_.empty()) {
         const char* empty = lobby_failed_    ? "Couldn't reach the online service."
@@ -2583,6 +2597,7 @@ void App::online_page(float width) {
     bool first = true;
     int n = 0;
     const auto waited = [](const launcher::OpenMatch& match) {
+        if (match.watching) return std::string(Tr("match in progress"));
         const int minutes = match.waiting / 60;
         return minutes < 1 ? Tr("waiting for a player") : TrFormat("waiting {} min", {std::to_string(minutes)});
     };
@@ -2615,7 +2630,7 @@ void App::online_page(float width) {
                 width, match.name.c_str(), detail.c_str(), 130.0f, 36.0f,
                 [&] {
                     if (other) {
-                        ui::button("Join", Kind::Secondary, 130.0f, false);
+                        ui::button(match.watching ? "Watch" : "Join", Kind::Secondary, 130.0f, false);
                     } else if (!file) {
                         if (ui::button("Add…", Kind::Secondary, 130.0f, !one.checking)) {
                             // (the system's file dialog wants a mouse or a keyboard)
@@ -2625,8 +2640,8 @@ void App::online_page(float width) {
                                 choose_game_file(which);
                             }
                         }
-                    } else if (ui::button("Join", Kind::Primary, 130.0f, ready)) {
-                        play(which, join_arguments(one.about->online, match.code));
+                    } else if (ui::button(match.watching ? "Watch" : "Join", Kind::Primary, 130.0f, ready && (!match.watching || one.about->online.watch_argument))) {
+                        play(which, join_arguments(one.about->online, match.code, match.watching));
                     }
                 },
                 !file || other);
@@ -2901,6 +2916,9 @@ std::vector<std::string> App::invite_arguments(const launcher::Online& online, c
         args.push_back(online.invite_name_argument);
         args.push_back(player.name);
     }
+    if (online.spectators_argument && prefs_.get("online", "spectators") == "1") {
+        args.push_back(online.spectators_argument);
+    }
     if (online.arcade_argument && prefs_.get("online", "arcade") == "1") {
         args.push_back(online.arcade_argument);
     }
@@ -3081,8 +3099,8 @@ void App::lobby_card(size_t which, float width, bool ready) {
     const launcher::Online& online = one.about->online;
     follow_lobby(online.lobby);
     ui::gap(24);
-    live_label("OPEN MATCHES", width, lobby_fetch_.valid());
-    ui::text("Matches players are hosting in the lobby now. Join one to play its host.", Font::Regular, ui::size::kDetail, p.secondary, width);
+    live_label("ONLINE MATCHES", width, lobby_fetch_.valid());
+    ui::text("Join a waiting match to play, or Watch a running match whose host allows spectators.", Font::Regular, ui::size::kDetail, p.secondary, width);
     ui::gap(10);
     Card card(width);
     if (lobby_.empty()) {
@@ -3098,6 +3116,7 @@ void App::lobby_card(size_t which, float width, bool ready) {
         }
         const int minutes = match.waiting / 60;
         std::string waited = minutes < 1 ? Tr("Waiting for a player") : TrFormat("Waiting {} min", {std::to_string(minutes)});
+        if (match.watching) waited = Tr("Match in progress");
         const bool other = !version_matches(match.version);
         if (!match.version.empty()) {
             waited += TrFormat(". Version {}", {match.version}) +
@@ -3107,8 +3126,8 @@ void App::lobby_card(size_t which, float width, bool ready) {
         row(
             width, match.name.c_str(), waited.c_str(), 130.0f, 36.0f,
             [&] {
-                if (ui::button("Join", Kind::Secondary, 130.0f, ready && !other)) {
-                    play(which, join_arguments(online, match.code));
+                if (ui::button(match.watching ? "Watch" : "Join", Kind::Secondary, 130.0f, ready && !other && (!match.watching || online.watch_argument))) {
+                    play(which, join_arguments(online, match.code, match.watching));
                 }
             },
             other);

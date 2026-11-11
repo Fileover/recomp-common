@@ -5,6 +5,9 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- **Watch a running match** (from liquidmetalxy-debug, #64): a port that gives `Online::watch_argument` and
+  `spectators_argument` has an **Allow spectators** switch for hosting, and a lobby entry the service marks `watching`
+  (a match under way whose host allows it) offers **Watch** in place of Join. Other ports are as before.
 - **No console window beside the launcher on Windows** (from Fileover, cps2recomp #208): it is built as a windowed
   program, as the games are; started from a terminal, it attaches to that terminal's console for its output.
 - **The menu and the launcher in the player's language** (`i18n.h`): English, Brazilian Portuguese (`pt-BR`) and Spanish

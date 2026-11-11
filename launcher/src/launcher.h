@@ -8,6 +8,7 @@
 // compile definitions set by launcher.cmake: LAUNCHER_GAME_NAME, LAUNCHER_GAME_EXE, LAUNCHER_APP_ID,
 // LAUNCHER_HOME_ENV, LAUNCHER_DISCLAIMER.
 #pragma once
+#define RECOMP_LAUNCHER_SPECTATORS 1
 
 #include <SDL3/SDL.h>
 
@@ -97,6 +98,8 @@ struct Online {
     // The game's id as the online service knows it (the invitations a game hosts say it), for a launcher of one game:
     // its game in the waiting room. A collection's games have theirs (CollectionGame::id).
     const char *game = nullptr;
+    const char *watch_argument = nullptr; // watch a running match by code
+    const char *spectators_argument = nullptr; // host opt-in to spectators
 };
 
 struct InfoRow {

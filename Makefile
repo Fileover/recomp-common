@@ -7,7 +7,7 @@ CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Wpedantic -Isrc
 B := build
 
 .PHONY: test example launcher launcher-shots audit clean
-test: $(B)/menu_test $(B)/i18n_test $(B)/c_test $(B)/settings_test $(B)/settings_c_test $(B)/folders_test $(B)/proxy_test $(B)/update_test
+test: $(B)/menu_test $(B)/i18n_test $(B)/c_test $(B)/settings_test $(B)/settings_c_test $(B)/folders_test $(B)/proxy_test $(B)/update_test $(B)/online_test
 	@$(B)/menu_test
 	@$(B)/i18n_test
 	@$(B)/c_test
@@ -16,6 +16,7 @@ test: $(B)/menu_test $(B)/i18n_test $(B)/c_test $(B)/settings_test $(B)/settings
 	@$(B)/folders_test
 	@$(B)/proxy_test
 	@$(B)/update_test
+	@$(B)/online_test
 
 $(B)/menu_test: tests/menu_test.cpp src/menu.cpp src/menu.h src/text.h src/i18n.h src/i18n_pt_br.h src/i18n_es.h
 	@mkdir -p $(B)
@@ -80,3 +81,8 @@ audit:
 
 clean:
 	rm -rf $(B)
+
+# The lobby's list as the launcher reads it (launcher/src/online.cpp): Join, or Watch for a running match
+$(B)/online_test: tests/online_test.cpp launcher/src/online.cpp launcher/src/online.h launcher/src/run_program.cpp
+	@mkdir -p $(B)
+	$(CXX) $(CXXFLAGS) -Ilauncher/src -fsanitize=address,undefined tests/online_test.cpp launcher/src/run_program.cpp -o $@

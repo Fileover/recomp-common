@@ -84,6 +84,7 @@ private:
         std::string id;                  // a collection's game's (a port's: "")
         std::string name;                // its name; its player folder is named by it
         std::string series;              // a collection's game's series (launcher::CollectionGame::series), or ""
+        std::string released, hardware;  // (launcher::CollectionGame's: for sorting and the hardware choice)
         std::string exe;                 // its program, beside the launcher
         std::string file_section;        // launcher.ini: where its file is ("game", or "game.<id>")
         std::string video_section;       // its Display switches ("video", or "video.<id>")
@@ -142,6 +143,15 @@ private:
     // after those that are, in the collection's order). The player changes it by dragging a game's row in the
     // sidebar, or with Move up and Move down on the game's page.
     void load_order();
+    // launcher.ini [games] sort: "" (the player's order), "name" or "released": the order load_order() makes, the
+    // player's own order kept beneath it (a game dragged while sorted makes what is shown the player's order)
+    std::string sort_by() const;
+    // The hardware the collection's games name (none, or one: no choice offered), and the one chosen
+    // (launcher.ini [games] hardware; "": all)
+    std::vector<std::string> hardwares() const;
+    std::string hardware_chosen() const;
+    // Whether the game is on the list as the hardware chosen has it
+    bool on_hardware(size_t which) const;
     // order_ with each series' games together, where its first game with a page is (else its first game)
     void group_order();
     // The games with a page as the places of the sidebar's list, in the player's order: a game, or a series' games
@@ -248,7 +258,7 @@ private:
     // if they switched it on; and the row with that switch
     std::vector<std::string> host_arguments(const launcher::Online& online) const;
     // Join's: the match (a code or an address), and the player's name, which the game shows the other player
-    std::vector<std::string> join_arguments(const launcher::Online& online, const std::string& match) const;
+    std::vector<std::string> join_arguments(const launcher::Online& online, const std::string& match, bool watching = false) const;
     void arcade_row(float width, const launcher::Online& online);
     void lobby_card(size_t which, float width, bool ready);
     // The Online page (a collection with a lobby: Collection::lobby): host in the lobby in any game, and every game's

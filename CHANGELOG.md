@@ -5,6 +5,11 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- `tools/sync-common.sh` dates the copy's files now, not at the commit (a build noticed none of them changed: a link
+  error, the new code not compiled), and lists the commits in `src/` and `launcher/` a sync brings since the last.
+- **Watch a running match** (from liquidmetalxy-debug, #64): a port that gives `Online::watch_argument` and
+  `spectators_argument` has an **Allow spectators** switch for hosting, and a lobby entry the service marks `watching`
+  (a match under way whose host allows it) offers **Watch** in place of Join. Other ports are as before.
 - **A folder of the games' files beside the launcher** (`Description::find_beside`, from Fileover, cps2recomp #208): a
   release that ships its games' files beside the launcher (a `roms` folder, say) can have the launcher find them when it
   opens. For each game that has no file chosen, or whose remembered one is not usable, the port is given the folder the

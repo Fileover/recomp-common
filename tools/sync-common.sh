@@ -68,13 +68,17 @@ if [ -e "$dest" ] && [ ! -f "$record" ]; then
     echo "sync-common: $dest is there and is not a copy made by this script; leaving it alone" >&2
     exit 1
 fi
+# (the commit the copy was at: what this sync brings is listed at the end)
+was=""
+if [ -f "$record" ]; then was=$(sed -n 's/^commit //p' "$record"); fi
 if [ -d "$dest" ]; then
     find "$dest" -type f -delete
 fi
 mkdir -p "$dest"
-git -C "$src" archive "$commit" src | tar -x -C "$dest" --strip-components=1
+# (-m: the files dated now, not at the commit, so that a build notices every one that changed)
+git -C "$src" archive "$commit" src | tar -x -m -C "$dest" --strip-components=1
 if git -C "$src" cat-file -e "$commit:launcher" 2> /dev/null; then
-    git -C "$src" archive "$commit" launcher | tar -x -C "$dest"
+    git -C "$src" archive "$commit" launcher | tar -x -m -C "$dest"
 fi
 {
     echo "# A copy of recomp-common's src/ and launcher/, made by tools/sync-common.sh. Do not change it here."
@@ -82,3 +86,7 @@ fi
     hashes
 } > "$record"
 echo "recomp-common/: commit $commit"
+if [ -n "$was" ] && [ "$was" != "$commit" ] && git -C "$src" cat-file -e "$was^{commit}" 2> /dev/null; then
+    echo "recomp-common/: what changed in src/ and launcher/ since $was:"
+    git -C "$src" log --oneline --no-merges "$was..$commit" -- src launcher | sed 's/^/  /'
+fi

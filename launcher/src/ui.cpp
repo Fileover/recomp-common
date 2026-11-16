@@ -395,8 +395,13 @@ bool dropdown(const char* id_text, const std::vector<std::string>& labels, int& 
         g_values[popup + 1] = 0.0f;
     }
     bool changed = false;
-    ImGui::SetNextWindowPos(ImVec2(rect.Min.x, rect.Max.y + px(6)));
-    ImGui::SetNextWindowSizeConstraints(ImVec2(box.x, 0), ImVec2(box.x, px(320)));
+    // (under the box, or over it where the list would go past the window's foot and there is more room above)
+    const float tall = std::min(px(320), static_cast<float>(labels.size()) * (px(34) + ImGui::GetStyle().ItemSpacing.y) + px(12));
+    const ImGuiViewport* view = ImGui::GetMainViewport();
+    const float below = view->WorkPos.y + view->WorkSize.y - (rect.Max.y + px(6)), above = rect.Min.y - px(6) - view->WorkPos.y;
+    const bool up = tall > below && above > below;
+    ImGui::SetNextWindowPos(ImVec2(rect.Min.x, up ? rect.Min.y - px(6) : rect.Max.y + px(6)), ImGuiCond_Always, ImVec2(0.0f, up ? 1.0f : 0.0f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(box.x, 0), ImVec2(box.x, std::min(px(320), std::max(up ? above : below, px(120)))));
     float shown = ease_out(animate(popup + 1, 1.0f, 20.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(6), px(6)));
     if (ImGui::BeginPopupEx(popup, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove)) {

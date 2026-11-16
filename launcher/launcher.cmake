@@ -67,14 +67,16 @@ target_include_directories(launcher_imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOU
 target_compile_definitions(launcher_imgui PUBLIC IMGUI_DEFINE_MATH_OPERATORS IMGUI_DISABLE_OBSOLETE_FUNCTIONS IMGUI_DISABLE_DEMO_WINDOWS IMGUI_DISABLE_DEBUG_TOOLS)
 target_link_libraries(launcher_imgui PUBLIC SDL3::SDL3)
 
-# The fonts, compiled in (blob("font_regular") / blob("font_semibold") for ui.cpp).
+# The fonts, compiled in (blob("font_regular") / blob("font_semibold") for ui.cpp), and the country flags (blob("flags"):
+# flags.cpp).
 set(LAUNCHER_FONTS "${CMAKE_CURRENT_BINARY_DIR}/fonts.cpp")
 add_custom_command(OUTPUT "${LAUNCHER_FONTS}"
     COMMAND "${CMAKE_COMMAND}" -DOUT=${LAUNCHER_FONTS}
             -DREGULAR=${inter_SOURCE_DIR}/extras/ttf/Inter-Regular.ttf
             -DSEMIBOLD=${inter_SOURCE_DIR}/extras/ttf/Inter-SemiBold.ttf
+            -DFLAGS=${RECOMP_LAUNCHER_DIR}/flags.png
             -P "${RECOMP_LAUNCHER_DIR}/embed_fonts.cmake"
-    DEPENDS "${RECOMP_LAUNCHER_DIR}/embed_fonts.cmake"
+    DEPENDS "${RECOMP_LAUNCHER_DIR}/embed_fonts.cmake" "${RECOMP_LAUNCHER_DIR}/flags.png"
     VERBATIM)
 
 # (Android: a library, which the app's activity loads and calls the main of; it starts each game's activity, whose
@@ -86,7 +88,7 @@ else()
 endif()
 target_sources(launcher PRIVATE
     ${RECOMP_LAUNCHER_DIR}/src/main.cpp ${RECOMP_LAUNCHER_DIR}/src/app.cpp ${RECOMP_LAUNCHER_DIR}/src/game_process.cpp
-    ${RECOMP_LAUNCHER_DIR}/src/steam.cpp ${RECOMP_LAUNCHER_DIR}/src/online.cpp ${RECOMP_LAUNCHER_DIR}/src/run_program.cpp ${RECOMP_LAUNCHER_DIR}/src/ui.cpp ${RECOMP_COMMON_SRC}/settings.cpp
+    ${RECOMP_LAUNCHER_DIR}/src/steam.cpp ${RECOMP_LAUNCHER_DIR}/src/online.cpp ${RECOMP_LAUNCHER_DIR}/src/flags.cpp ${RECOMP_LAUNCHER_DIR}/src/run_program.cpp ${RECOMP_LAUNCHER_DIR}/src/ui.cpp ${RECOMP_COMMON_SRC}/settings.cpp
     ${LAUNCHER_PORT_SOURCES} "${LAUNCHER_FONTS}")
 set_target_properties(launcher PROPERTIES OUTPUT_NAME "${LAUNCHER_GAME_EXE}-launcher")
 target_include_directories(launcher PRIVATE ${RECOMP_LAUNCHER_DIR}/src ${RECOMP_COMMON_SRC})

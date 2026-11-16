@@ -5,6 +5,12 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- **Country flags in the waiting room**: **Your country** (under Let others invite me; none unless chosen,
+  `[online] country`) is sent with the check-in as `country`, and a player whose service passes it back
+  (`RoomPlayer::country`) has their flag and country beside their name. Every ISO country's flag, from flag-icons
+  (MIT), in `launcher/flags.png` (made by `tools/flags.sh`); a port's service must keep and return `country` (an
+  older one ignores it). Ports that give out a launcher include `launcher/flags-LICENSE.txt`. Needs SDL 3.4 for the
+  pictures (a system SDL before it shows the country's name alone).
 - **Clear a game's file**: a game with a file chosen has a **Clear** button beside Choose… (on the Games list and the
   game's page), which forgets it (`launcher.ini`) and leaves the file where it is. Not while it is being checked or played.
 - `tools/sync-common.sh` dates the copy's files now, not at the commit (a build noticed none of them changed: a link

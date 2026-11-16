@@ -53,6 +53,13 @@ Code added later from another project must have a license compatible with the GP
 here, with its notice kept in the file. `tools/audit.sh` fails if a file marked as another project's
 is not one of those listed above.
 
+### flag-icons (the country flags)
+
+`launcher/flags.png` holds every ISO country's flag from **flag-icons 7.2.3**
+(https://github.com/lipis/flag-icons), drawn small by `tools/flags.sh`, and `launcher/src/countries.h`
+their names from it. **MIT License**, Copyright (c) 2013 Panayiotis Lipiridis: `launcher/flags-LICENSE.txt`,
+which a port that gives out a built launcher includes with it (the flags are inside the program).
+
 ## The font of the menu
 
 `src/text.h` contains a 5x7 dot-matrix font for ASCII 32 to 126 (475 bytes). It is the generic

@@ -5,6 +5,9 @@ a minor version. A port's copy only changes when it runs `tools/sync-common.sh`.
 
 ## Unreleased
 
+- **Input delay for hosting**: a port that gives `Online::delay_argument` has an **Input delay** choice (0 to 8 frames)
+  under Host, which Host and Invite pass to the game once the player has chosen one (`[online] delay`). Other ports are
+  as before.
 - **Clear a game's file**: a game with a file chosen has a **Clear** button beside Choose… (on the Games list and the
   game's page), which forgets it (`launcher.ini`) and leaves the file where it is. Not while it is being checked or played.
 - `tools/sync-common.sh` dates the copy's files now, not at the commit (a build noticed none of them changed: a link

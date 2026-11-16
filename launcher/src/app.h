@@ -292,6 +292,7 @@ private:
     void live_label(const char* text, float width, bool fetching);
     // A card's only row while there is nothing in it: `text`, with a spinner while `looking`
     void empty_row(float width, const char* text, bool looking);
+    void country_row(float width);
     void room_card(float width, const std::vector<size_t>& playable);
     void invitations_card(float width);
     std::vector<std::string> invite_arguments(const launcher::Online& online, const launcher::RoomPlayer& player) const;

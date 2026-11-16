@@ -18,7 +18,8 @@ check() { if [ -n "$2" ]; then echo "AUDIT FAIL: $1"; echo "$2" | head -10; fail
 grep_files() { grep -v '^tools/audit\.sh$' "$LIST" | tr '\n' '\0' | xargs -0 grep -nIE "$@" 2>/dev/null || true; }
 
 check "no game or archive file types" "$(grep -iE '\.(smc|sfc|nes|gb|gbc|gba|n64|z64|gen|bin|cue|iso|chd|gdi|wad|dol|rel|nds|3ds|xbe|xiso|zip|7z|rar|key|sav|srm|state|eep|rom)$' "$LIST" || true)"
-check "no pictures but those of the menu and the launcher themselves" "$(grep -iE '\.(png|jpe?g|gif|bmp|ppm|webp)$' "$LIST" | grep -vE '^docs/(menu|menu-page|launcher)\.png$' || true)"
+# (and launcher/flags.png, the country flags from flag-icons: THIRD_PARTY_NOTICES.md)
+check "no pictures but those of the menu and the launcher themselves, and the flags" "$(grep -iE '\.(png|jpe?g|gif|bmp|ppm|webp)$' "$LIST" | grep -vE '^docs/(menu|menu-page|launcher)\.png$' | grep -vx 'launcher/flags\.png' || true)"
 # (the published checksums of the libraries the launcher's build downloads are not keys)
 check "no key-like hex strings (32 digits or more)" "$(grep_files '\b[0-9a-fA-F]{32,}\b' | grep -vE 'URL_HASH SHA256=[0-9a-f]{64}$' || true)"
 check "no home folder paths" "$(grep_files -e '/Users/' -e '/home/[a-z]' -e 'C:\\\\Users' || true)"

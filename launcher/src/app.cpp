@@ -2599,6 +2599,7 @@ std::vector<std::string> App::host_arguments(const launcher::Online& online) con
     if (online.arcade_argument && prefs_.get("online", "arcade") == "1") {
         args.push_back(online.arcade_argument);
     }
+    delay_arguments(args, online);
     return args;
 }
 
@@ -2611,6 +2612,14 @@ std::vector<std::string> App::join_arguments(const launcher::Online& online, con
     return args;
 }
 
+void App::delay_arguments(std::vector<std::string>& args, const launcher::Online& online) const {
+    const std::string delay = prefs_.get("online", "delay");
+    if (online.delay_argument && delay.size() == 1 && delay[0] >= '0' && delay[0] <= '8') {
+        args.push_back(online.delay_argument);
+        args.push_back(delay);
+    }
+}
+
 void App::arcade_row(float width, const launcher::Online& online) {
     if (online.spectators_argument) {
         inset_separator(width);
@@ -2619,6 +2628,24 @@ void App::arcade_row(float width, const launcher::Online& online) {
             42.0f, 24.0f, [&] {
                 if (ui::toggle("##online_spectators", on)) {
                     prefs_.set("online", "spectators", on ? "0" : "1");
+                    prefs_.save();
+                }
+            });
+    }
+    if (online.delay_argument) {
+        inset_separator(width);
+        const std::string delay = prefs_.get("online", "delay");
+        int chosen = delay.size() == 1 && delay[0] >= '0' && delay[0] <= '8' ? delay[0] - '0' : 2;
+        std::vector<std::string> frames;
+        for (int n = 0; n <= 8; n++) {
+            frames.push_back(n == 1 ? Tr("1 frame") : TrFormat("{} frames", {std::to_string(n)}));
+        }
+        row(width, "Input delay",
+            "Frames each player's controls wait in the matches you host; the other player gets the same. Fewer feel quicker "
+            "but leave more to guess on a slow connection, which shows as corrections. 2 unless you choose.",
+            190.0f, 36.0f, [&] {
+                if (ui::dropdown("##online_delay", frames, chosen, 190.0f)) {
+                    prefs_.set("online", "delay", std::to_string(chosen));
                     prefs_.save();
                 }
             });
@@ -3119,6 +3146,7 @@ std::vector<std::string> App::invite_arguments(const launcher::Online& online, c
     if (online.arcade_argument && prefs_.get("online", "arcade") == "1") {
         args.push_back(online.arcade_argument);
     }
+    delay_arguments(args, online);
     return args;
 }
 

@@ -84,6 +84,10 @@ struct Online {
     // Arcade while waiting: when the player switches it on ([online] arcade), Host adds `arcade_argument`, and the
     // host plays the game alone until the other player comes, who joins the game as it is. nullptr: no such switch.
     const char *arcade_argument = nullptr; // "--net-arcade"
+    // Input delay: the host's choice of frames each player's controls wait ([online] delay, 0 to 8, under Host), which
+    // Host and Invite add as `delay_argument N` when the player has chosen one (the game's own default otherwise); the
+    // game tells the one joining. nullptr: no such choice.
+    const char *delay_argument = nullptr; // "--net-delay"
     // Inviting a player from the waiting room (Collection::room): Host with `invite_argument THEIRS:MINE` (the two
     // players' ids) and `invite_name_argument NAME` (theirs), and the player's own name with `name_argument`; the match
     // isn't listed. nullptr: no Invite.

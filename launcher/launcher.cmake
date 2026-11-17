@@ -41,17 +41,24 @@ if(NOT SDL3_FOUND)
     set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(sdl3
         URL https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz
+            https://github.com/libsdl-org/SDL/releases/download/release-3.4.16/SDL3-3.4.16.tar.gz
         URL_HASH SHA256=7322236cd12090c3eb40b9728be4d49c76f66ad17d04369584d4ecad5cf77c68
         DOWNLOAD_EXTRACT_TIMESTAMP ON)
     FetchContent_MakeAvailable(sdl3)
 endif()
 
+# (each download from more than one address, tried in turn: GitHub refuses one now and then, 403, and a build that fails
+# for that is a build lost. codeload.github.com is where github.com's archive address sends; a release's file is tried
+# again at the same address. The hashes keep whatever comes the same file.)
 FetchContent_Declare(imgui
     URL https://github.com/ocornut/imgui/archive/refs/tags/v1.92.9b.tar.gz
+        https://codeload.github.com/ocornut/imgui/tar.gz/refs/tags/v1.92.9b
+        https://github.com/ocornut/imgui/archive/refs/tags/v1.92.9b.tar.gz
     URL_HASH SHA256=21d8a0a565e85dce943e375db00812c2f3f0ab21f3f0f7964e364a63422d7f99
     DOWNLOAD_EXTRACT_TIMESTAMP ON)
 FetchContent_Declare(inter
     URL https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
+        https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
     URL_HASH SHA256=9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e
     DOWNLOAD_EXTRACT_TIMESTAMP ON)
 FetchContent_MakeAvailable(imgui inter)
